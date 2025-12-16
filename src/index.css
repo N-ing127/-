@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* Leaflet Marker - 玻璃擬態氣泡 */
+  .leaflet-marker-bubble {
+    @apply bg-white/40 backdrop-blur-md border-2 border-white/70 shadow-lg shadow-black/20 rounded-full;
+    @apply w-12 h-12 flex items-center justify-center transition-all duration-300;
+    @apply hover:scale-110 active:scale-95 cursor-pointer;
+  }
+
+  /* 氣泡下方的小箭頭 */
+  .leaflet-marker-pointer {
+    @apply w-0 h-0 border-l-[8px] border-r-[8px] border-t-[10px] mx-auto -mt-0.5 transition-colors duration-300;
+  }
+
+  /* 氣泡內的文字/圖標 */
+  .leaflet-marker-content {
+    @apply text-white font-bold text-sm leading-none drop-shadow-sm;
+  }
+
+  /* Leaflet 地圖控制項 (縮放按鈕) - 玻璃化覆蓋 */
+  .leaflet-control-container .leaflet-control-zoom {
+    @apply border-none shadow-none mt-4 ml-4;
+  }
+
+  .leaflet-bar a {
+    @apply bg-white/70 backdrop-blur-md border-2 border-white/50 shadow-lg shadow-gray-200/50;
+    @apply text-stone-600 font-bold flex items-center justify-center text-lg;
+    @apply w-10 h-10 transition-all duration-200;
+    background-image: none !important;
+  }
+
+  .leaflet-bar a:hover { @apply bg-white text-emerald-600 border-white scale-105 z-10; }
+  .leaflet-bar a:active { @apply scale-95 shadow-inner bg-stone-100; }
+  .leaflet-bar a:first-child { @apply rounded-t-xl rounded-b-none border-b-0; }
+  .leaflet-bar a:last-child { @apply rounded-b-xl rounded-t-none; }
+  .leaflet-bar a.leaflet-disabled { @apply bg-gray-100/50 text-gray-300 cursor-not-allowed hover:scale-100 border-gray-100/50; }
+}
