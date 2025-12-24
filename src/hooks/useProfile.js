@@ -1,86 +1,70 @@
-import { useState, useEffect, useCallback } from 'react';
-import { ACHIEVEMENTS_DATA } from '../data/constants';
+import { useState, useEffect } from 'react';
+import { INITIAL_PROFILE, ACHIEVEMENTS_DATA } from '../data/constants';
 
 export const useProfile = (triggerToast) => {
-  const STORAGE_KEY = 'time_machine_user_v3';
-  
-  // 模擬 DB: UserStats
-  const defaultProfile = {
-    name: '李同學',
-    campus: '台大校區',
-    department: '資訊工程學系',
-    avatar: null,
-    banner: null,
-    stats: { 
-      level: 3, exp: 450, nextLevelExp: 1000, 
-      savedCount: 4, savedWeight: 5.2, postedCount: 0, nightOwlActions: 0 
-    },
-    unlockedAchievements: [] // 模擬 DB: UserAchievements (只存 ID)
-  };
-
   const [profile, setProfile] = useState(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? JSON.parse(saved) : defaultProfile;
+      const saved = localStorage.getItem('time-machine-profile');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...INITIAL_PROFILE,
+          ...parsed,
+          settings: {
+            ...INITIAL_PROFILE.settings,
+            ...(parsed.settings || {})
+          }
+        };
+      }
     } catch (e) {
-      return defaultProfile;
+      console.error("Profile 資料解析失敗:", e);
     }
+    return INITIAL_PROFILE;
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    localStorage.setItem('time-machine-profile', JSON.stringify(profile));
   }, [profile]);
 
-  // ==========================================
-  // 核心: 規則評估引擎 (Rule Engine)
-  // ==========================================
-  const evaluateRule = (stats, rule) => {
-    if (!rule) return false;
-    
-    // 從 stats 中取出對應的數據 (e.g., stats['savedCount'])
-    const currentValue = stats[rule.statKey] || 0;
-    
-    switch (rule.operator) {
-      case '>=': return currentValue >= rule.targetValue;
-      case '>': return currentValue > rule.targetValue;
-      case '=': return currentValue === rule.targetValue;
-      case '<': return currentValue < rule.targetValue;
-      default: return false;
-    }
-  };
+  /**
+   * 核心邏輯：更新數據並檢查是否有新成就解鎖
+   * @param {Function} updateFn - 更新 stats 的函數
+   * @returns {Object|null} - 如果有新解鎖的成就，回傳該成就物件，否則回傳 null
+   */
+  const updateStatsAndCheckAchievements = (updateFn) => {
+    let newlyUnlocked = null;
 
-  const updateStats = useCallback((updateFn) => {
     setProfile(prev => {
-      // 1. 更新 UserStats
       const newStats = updateFn(prev.stats);
+      const currentUnlocked = prev.unlockedAchievements || [];
       
-      // 2. 檢查 AchievementDefinitions
-      const newUnlocks = ACHIEVEMENTS_DATA.filter(ach => {
-        // 過濾掉已解鎖的 (UserAchievements check)
-        const isAlreadyUnlocked = prev.unlockedAchievements.includes(ach.id);
-        if (isAlreadyUnlocked) return false;
-
-        // 執行規則檢查
-        return evaluateRule(newStats, ach.rule);
+      // 找出符合條件但尚未解鎖的成就
+      // 邏輯範例：savedCount 達到 5 (見習生), 10 (大師)
+      const possibleNewAch = ACHIEVEMENTS_DATA.find(ach => {
+        if (currentUnlocked.includes(ach.id)) return false;
+        
+        // 簡單門檻判斷 (可根據 constants.js 的 rule 擴充)
+        if (ach.id === 'food_saver_1' && newStats.savedCount >= 5) return true;
+        if (ach.id === 'food_saver_2' && newStats.savedCount >= 10) return true;
+        if (ach.id === 'night_owl' && newStats.nightOwlActions >= 1) return true;
+        
+        return false;
       });
 
-      // 3. 觸發通知與寫入
-      if (newUnlocks.length > 0) {
-        newUnlocks.forEach(ach => {
-          setTimeout(() => triggerToast(`🏆 解鎖成就：${ach.title}`, 'success'), 1000);
-        });
+      if (possibleNewAch) {
+        newlyUnlocked = possibleNewAch;
+        return {
+          ...prev,
+          stats: newStats,
+          unlockedAchievements: [...currentUnlocked, possibleNewAch.id]
+        };
       }
 
-      return {
-        ...prev,
-        stats: newStats,
-        unlockedAchievements: [
-          ...prev.unlockedAchievements, 
-          ...newUnlocks.map(a => a.id)
-        ]
-      };
+      return { ...prev, stats: newStats };
     });
-  }, [triggerToast]);
 
-  return { profile, setProfile, updateStats };
+    return newlyUnlocked;
+  };
+
+  return { profile, setProfile, updateStats: updateStatsAndCheckAchievements };
 };

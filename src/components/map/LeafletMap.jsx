@@ -1,126 +1,123 @@
-import React, { useMemo } from 'react'; // 引入 useMemo
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'; // 引入 Popup
+import React, { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LOCATIONS, NTU_CENTER } from '../../data/constants';
-import { calculateDistance } from '../../utils/helpers'; // 引入計算距離
-import MapPostPopup from '../shared/MapPostPopup'; // 引入新增的組件
 
-const LeafletMap = ({ posts, userLocation, filterLoc, onPinClick, setSelectedPost }) => { // 接收 setSelectedPost
-  
-  // 建立客製化圖標 (邏輯不變)
-  const createCustomIcon = (count, isSelected, name) => {
-    const bubbleColor = count > 0 ? 'bg-orange-500' : 'bg-gray-700';
-    const pointerColor = count > 0 ? 'border-t-orange-500' : 'border-t-gray-700';
-    
-    // Lucide Utensils Icon SVG
-    const utensilsSvg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-white/50">
-        <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/>
-      </svg>
-    `;
+// 自定義 Marker 圖示
+const createCustomIcon = (status, hasFood) => {
+  let color = '#d1d5db'; 
+  let scale = 'scale-75';
 
-    const htmlContent = `
-      <div class="flex flex-col items-center" style="transform-origin: bottom center;">
-        <div class="leaflet-marker-bubble ${bubbleColor} ${isSelected ? 'scale-125 z-50 ring-4 ring-white/30' : 'scale-100 z-10'}">
-          <span class="leaflet-marker-content">
-            ${count > 0 ? `剩 ${count}` : utensilsSvg}
-          </span>
-        </div>
-        <div class="leaflet-marker-pointer ${pointerColor}"></div>
-        ${isSelected ? `<span class="absolute top-full mt-1 bg-white/90 backdrop-blur-sm text-[10px] font-bold text-gray-700 px-2 py-0.5 rounded-full shadow-sm whitespace-nowrap border border-white/50">${name}</span>` : ''}
-      </div>
-    `;
+  if (hasFood) {
+    color = '#10b981'; 
+    scale = 'scale-100';
+    if (status === 'reserved') {
+      color = '#f59e0b'; 
+      scale = 'scale-110';
+    }
+  }
 
-    return L.divIcon({
-      html: htmlContent,
-      className: 'bg-transparent',
-      iconSize: [50, 50],
-      iconAnchor: [25, 50]
-    });
-  };
-
-  const userIcon = L.divIcon({
-    className: 'bg-transparent',
+  return L.divIcon({
     html: `
-      <div class="relative flex items-center justify-center w-6 h-6">
-        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-        <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-600 ring-2 ring-white"></span>
+      <div class="relative flex items-center justify-center ${scale} transition-all duration-300">
+        ${status === 'reserved' ? '<div class="absolute w-10 h-10 bg-amber-400/40 rounded-full animate-ping"></div>' : ''}
+        <div class="w-7 h-7 bg-white dark:bg-zinc-900 rounded-full shadow-md flex items-center justify-center border-2" style="border-color: ${color}">
+          <div class="w-3.5 h-3.5 rounded-full" style="background-color: ${color}"></div>
+        </div>
       </div>
     `,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12]
+    className: 'custom-marker-wrapper',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
+};
 
-  // NEW: 計算距離並分組 posts (優化性能)
-  const postsWithDistance = useMemo(() => { 
-    if (!userLocation || !userLocation.lat) return posts.map(p => ({...p, distance: 0})); 
-    return posts.map(post => { 
-      const loc = LOCATIONS.find(l => l.id === post.locationId); 
-      // 處理找不到地點的情況，避免崩潰
-      const distance = loc ? calculateDistance(userLocation, loc) : 99999; 
-      return { ...post, distance }; 
-    }); 
-  }, [posts, userLocation]);
+// 地圖自動縮放控制器：支援系館聚焦與定位聚焦
+function MapUpdater({ filterLoc, userLocation }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (filterLoc) {
+      const loc = LOCATIONS.find(l => l.id === filterLoc);
+      if (loc) {
+        map.flyTo([loc.lat, loc.lng], 18, {
+          animate: true,
+          duration: 1.5,
+          easeLinearity: 0.25
+        });
+      }
+    }
+  }, [filterLoc, map]);
 
+  useEffect(() => {
+    // 當 userLocation 改變（且沒有選中特定系館時），聚焦回使用者
+    if (userLocation && !filterLoc) {
+      map.flyTo([userLocation.lat, userLocation.lng], 17, {
+        animate: true,
+        duration: 1.0
+      });
+    }
+  }, [userLocation, map]);
+
+  return null;
+}
+
+const LeafletMap = ({ posts, userLocation, filterLoc, onPinClick }) => {
   return (
     <MapContainer 
-      center={NTU_CENTER} 
-      zoom={15} 
-      scrollWheelZoom={true} 
-      className="w-full h-full z-0 bg-stone-100 rounded-[32px]" 
-      zoomControl={true}
+      center={[NTU_CENTER.lat, NTU_CENTER.lng]} 
+      zoom={16} 
+      className="w-full h-full"
+      zoomControl={false}
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        className="opacity-80 saturate-[0.8]"
+        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
       
-      {LOCATIONS.map(loc => {
-        const availablePosts = postsWithDistance.filter(p => p.locationId === loc.id && p.status === 'available');
-        const availableCount = availablePosts.length;
-        const isSelected = filterLoc === loc.id;
-        // 取得距離最近的第一個可展示貼文
-        const firstPost = availablePosts.sort((a, b) => a.distance - b.distance)[0]; 
+      <MapUpdater filterLoc={filterLoc} userLocation={userLocation} />
 
+      {LOCATIONS.map(loc => {
+        const locPosts = (posts || []).filter(p => p.locationId === loc.id && p.status !== 'taken');
+        const hasFood = locPosts.length > 0;
+        const hasReserved = locPosts.some(p => p.status === 'reserved');
+        
         return (
           <Marker 
             key={loc.id} 
             position={[loc.lat, loc.lng]} 
-            icon={createCustomIcon(availableCount, isSelected, loc.name)}
-            eventHandlers={{
-              // 保留點擊 Marker 時篩選列表的功能
-              click: (e) => {
-                L.DomEvent.stopPropagation(e);
-                onPinClick(loc.id);
-              }
-            }}
-          > 
-            {/* NEW: 浮動 Glass Popover */}
-            {availableCount > 0 && firstPost && (
-              <Popup minWidth={250}>
-                {/* MapPostPopup 將渲染 Popover 內容 */}
-                <MapPostPopup 
-                    post={firstPost} 
-                    locationName={loc.name}
-                />
-                
-                {/* 隱藏的 DOM 元素作為觸發詳情 Modal 的橋接點 */}
-                <button 
-                  id={`map-popup-detail-${firstPost.id}`} // 使用唯一 ID
-                  onClick={() => setSelectedPost(firstPost)} 
-                  className="hidden"
-                ></button>
+            icon={createCustomIcon(hasReserved ? 'reserved' : 'available', hasFood)}
+            eventHandlers={{ click: () => onPinClick(loc.id) }}
+          >
+            <Tooltip 
+              permanent={hasFood}
+              direction="top" 
+              offset={[0, -12]} 
+              className={`border-none shadow-none bg-transparent font-bold text-[11px] ${hasFood ? 'text-emerald-700 dark:text-emerald-400 opacity-100' : 'text-gray-400 opacity-60'}`}
+            >
+              {loc.name}
+            </Tooltip>
+            {hasFood && (
+              <Popup>
+                <div className="p-1 font-sans">
+                  <p className="font-bold border-b pb-1 mb-1">{loc.name}</p>
+                  <p className="text-[10px] text-gray-500">有 {locPosts.length} 份惜食物資</p>
+                </div>
               </Popup>
             )}
           </Marker>
         );
       })}
 
-      {userLocation && userLocation.lat && (
-        <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon} />
-      )}
+      <Marker 
+        position={[userLocation.lat, userLocation.lng]} 
+        icon={L.divIcon({
+          html: '<div class="w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-lg"></div>',
+          className: 'user-marker',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        })}
+      />
     </MapContainer>
   );
 };

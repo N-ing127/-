@@ -38,3 +38,44 @@
   .leaflet-bar a:last-child { @apply rounded-b-xl rounded-t-none; }
   .leaflet-bar a.leaflet-disabled { @apply bg-gray-100/50 text-gray-300 cursor-not-allowed hover:scale-100 border-gray-100/50; }
 }
+/* --- 重新優化深色模式全局色調 --- */
+
+/* 1. 修正整體背景：不要死黑，改用深灰藍色調更有質感 */
+.dark body { 
+  background-color: #0f172a !important; /* Slate-900 */
+}
+
+/* 2. 修正主頁背景 (原本太白的部分) */
+.dark .bg-stone-50 { 
+  background-color: #0f172a !important; 
+}
+
+/* 3. 修正個人頁與卡片容器 (讓它比背景亮一點點，產生層次) */
+.dark .bg-white { 
+  background-color: #1e293b !important; /* Slate-800 */
+}
+
+/* 4. 修正文字顏色：避免純白刺眼，改用柔和灰白 */
+.dark .text-gray-800 { 
+  color: #f1f5f9 !important; 
+}
+
+.dark .text-gray-700 { 
+  color: #e2e8f0 !important; 
+}
+
+.dark .text-gray-500 { 
+  color: #94a3b8 !important; 
+}
+
+/* 5. 修正邊框：改用半透明，讓深色模式更深邃 */
+.dark .border-gray-100, 
+.dark .border-gray-200, 
+.dark .border-white\/50 { 
+  border-color: rgba(255, 255, 255, 0.1) !important; 
+}
+
+/* 6. 地圖濾鏡：稍微調暗一點，不要太亮 */
+.dark .leaflet-tile {
+  filter: invert(100%) hue-rotate(180deg) brightness(0.8) contrast(0.9) !important;
+}

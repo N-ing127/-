@@ -1,63 +1,84 @@
 import { useState, useEffect } from 'react';
-import { MockApiService } from '../services/api';
+import { INITIAL_POSTS } from '../data/constants';
 
 export const usePosts = (triggerToast) => {
-  const [posts, setPosts] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [posts, setPosts] = useState(() => {
+    const saved = localStorage.getItem('time-machine-posts');
+    return saved ? JSON.parse(saved) : INITIAL_POSTS;
+  });
 
+  const [isLoading, setIsLoading] = useState(false);
+
+  // 持久化儲存
   useEffect(() => {
-    let isMounted = true;
-    
-    const loadData = async () => {
-      try {
-        // 從持久化 Mock API 獲取數據
-        const data = await MockApiService.fetchPosts();
-        if (isMounted) {
-          setPosts(data);
-          setIsLoading(false);
-        }
-      } catch (err) {
-        if (isMounted) triggerToast('無法載入貼文', 'error');
-        setIsLoading(false);
-      }
-    };
+    localStorage.setItem('time-machine-posts', JSON.stringify(posts));
+  }, [posts]);
 
-    loadData();
+  /**
+   * 核心功能：自動清理已領取超過 10 分鐘的貼文
+   */
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const tenMinutesInMs = 10 * 60 * 1000;
 
-    // 輪詢機制 (每 30 秒更新)
-    const intervalId = setInterval(loadData, 30000);
-    return () => { isMounted = false; clearInterval(intervalId); };
-  }, [triggerToast]);
+      setPosts(currentPosts => {
+        const filtered = currentPosts.filter(post => {
+          // 如果貼文已領取，且存有 takenAt 時間
+          if (post.status === 'taken' && post.takenAt) {
+            const timePassed = now - post.takenAt;
+            // 超過 10 分鐘就濾掉 (回傳 false)
+            return timePassed < tenMinutesInMs;
+          }
+          // 其他狀態（available, reserved）或是剛領取還沒到時間的都保留
+          return true;
+        });
+
+        // 只有在數量有變動時才更新 state，避免不必要的重新渲染
+        return filtered.length !== currentPosts.length ? filtered : currentPosts;
+      });
+    }, 60000); // 每 60 秒檢查一次
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
 
   const updatePostStatus = async (post, newStatus) => {
-    const originalPosts = [...posts];
-    
-    // 樂觀更新 (假設成功)
-    const updatedPosts = posts.map(p => p.id === post.id ? { ...p, status: newStatus } : p);
-    setPosts(updatedPosts);
-
+    setIsLoading(true);
     try {
-      // 呼叫 API，API 會更新其內部持久化狀態
-      await MockApiService.updatePostStatus(post.id, newStatus);
+      // 模擬網路延遲
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      setPosts(prev => prev.map(p => {
+        if (p.id === post.id) {
+          return { 
+            ...p, 
+            status: newStatus,
+            // 如果狀態變為已領取，記錄當下的時間戳記
+            takenAt: newStatus === 'taken' ? Date.now() : p.takenAt 
+          };
+        }
+        return p;
+      }));
       return true;
     } catch (error) {
-      // 失敗回滾
-      setPosts(originalPosts); 
-      triggerToast(error.message, 'error');
+      triggerToast('更新失敗', 'error');
       return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const addPost = async (newPostData) => {
+  const addPost = async (newPost) => {
+    setIsLoading(true);
     try {
-      // 呼叫 API，API 會創建貼文並更新其內部持久化狀態
-      const createdPost = await MockApiService.createPost(newPostData);
-      // 確保狀態被更新 (新貼文放在最前面)
-      setPosts(prev => [createdPost, ...prev]);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setPosts(prev => [newPost, ...prev]);
       return true;
     } catch (error) {
-      triggerToast('發布失敗，請稍後再試', 'error');
+      triggerToast('發布失敗', 'error');
       return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
