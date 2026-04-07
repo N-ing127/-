@@ -51,17 +51,20 @@ const AchievementModal = ({ achievement, onClose }) => {
   );
 };
 
-export default function TimeMachineApp() {
+// Auth gate wrapper（獨立 component，確保不違反 Hook 規則）
+export default function AppRoot() {
   const { user, loading } = useAuth();
 
-  // Auth gate：loading 中顯示 spinner，未登入顯示登入頁
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-stone-50 dark:bg-zinc-950">
       <div className="animate-spin text-4xl text-emerald-500">⌛</div>
     </div>
   );
   if (!user) return <LoginView />;
+  return <TimeMachineApp />;
+}
 
+function TimeMachineApp() {
   const [activeTab, setActiveTab] = useState('home');
   const [isDark, setIsDark] = useState(localStorage.getItem('theme') === 'dark');
   const [showToast, setShowToast] = useState(null);
@@ -94,6 +97,13 @@ export default function TimeMachineApp() {
 
   const { posts, isLoading, updatePostStatus, addPost } = usePosts(triggerToast);
   const { profile, setProfile, updateStats } = useProfile(triggerToast);
+
+  // profile 從 Supabase 非同步載入，尚未到位時顯示 spinner
+  if (!profile) return (
+    <div className="flex items-center justify-center h-screen bg-stone-50 dark:bg-zinc-950">
+      <div className="animate-spin text-4xl text-emerald-500">⌛</div>
+    </div>
+  );
 
   const handleLocateMe = () => {
     setIsLocating(true);
