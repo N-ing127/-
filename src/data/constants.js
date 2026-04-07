@@ -37,18 +37,102 @@ export const INITIAL_PROFILE = {
   settings: { showNearbyAlert: true, subscribedLocs: [], subscribedUsers: [], subscribedFoodTypes: [] }
 };
 
+// 建議：將你的照片放到 public/images/ 資料夾，並確保檔名對應
 export const INITIAL_POSTS = [
   {
-    id: 1,
+    id: 101,
     foodType: '正餐/主食',
-    quantity: 3,
+    quantity: 2,
     unit: '份',
-    locationId: 'common_studies',
-    locationDetail: '2樓電梯旁',
+    locationId: 'mech_eng_bldg',
+    locationDetail: '一樓大廳販賣機旁',
+    provider: '機械系學會',
     status: 'available',
-    timestamp: Date.now(),
+    timestamp: Date.now() - 3600000,
+    pickupTime: new Date(Date.now() - 3600000).toISOString(),
     expireTime: new Date(Date.now() + 7200000).toISOString(),
+    tags: ['葷食', '需自備餐具'],
+    imageUrl: '/images/food1.jpg', 
+    imageColor: 'bg-orange-100'
+  },
+  {
+    id: 102,
+    foodType: '點心/烘焙',
+    quantity: 5,
+    unit: '個',
+    locationId: 'main_lib',
+    locationDetail: '正門口左側石椅',
+    provider: '總圖之友',
+    status: 'available',
+    timestamp: Date.now() - 1800000,
+    pickupTime: new Date(Date.now() - 1800000).toISOString(),
+    expireTime: new Date(Date.now() + 10800000).toISOString(),
+    tags: ['蛋奶素', '需自備容器'],
+    imageUrl: '/images/food2.jpg',
+    imageColor: 'bg-emerald-100'
+  },
+  {
+    id: 103,
+    foodType: '飲品/湯品',
+    quantity: 1,
+    unit: '公升',
+    locationId: 'social_sci',
+    locationDetail: '辜振甫圖書館 2樓',
+    provider: '社科院辦公室',
+    status: 'available',
+    timestamp: Date.now() - 5400000,
+    pickupTime: new Date(Date.now() - 5400000).toISOString(),
+    expireTime: new Date(Date.now() + 3600000).toISOString(),
+    tags: ['需自備容器'],
+    imageUrl: '/images/food3.jpg',
+    imageColor: 'bg-blue-100'
+  },
+  {
+    id: 104,
+    foodType: '水果/蔬菜',
+    quantity: 3,
+    unit: '盒',
+    locationId: 'xiaofu_sq',
+    locationDetail: '二樓休息區',
+    provider: '生農學院代表',
+    status: 'available',
+    timestamp: Date.now() - 2400000,
+    pickupTime: new Date(Date.now() - 2400000).toISOString(),
+    expireTime: new Date(Date.now() + 5400000).toISOString(),
+    tags: ['素食'],
+    imageUrl: '/images/food4.jpg',
+    imageColor: 'bg-red-100'
+  },
+  {
+    id: 105,
+    foodType: '正餐/主食',
+    quantity: 4,
+    unit: '份',
+    locationId: 'boya_bldg',
+    locationDetail: '101教室後方',
+    provider: '通識教育中心',
+    status: 'reserved',
+    timestamp: Date.now() - 600000,
+    pickupTime: new Date(Date.now() - 600000).toISOString(),
+    expireTime: new Date(Date.now() + 1800000).toISOString(),
     tags: ['葷食'],
-    imageColor: 'bg-blue-400'
+    imageUrl: '/images/food5.jpg',
+    imageColor: 'bg-teal-100'
+  },
+  {
+    id: 106,
+    foodType: '點心/烘焙',
+    quantity: 10,
+    unit: '片',
+    locationId: 'ee_bldg_2',
+    locationDetail: '三樓交誼廳',
+    provider: '電機系辦',
+    status: 'taken',
+    timestamp: Date.now() - 7200000,
+    pickupTime: new Date(Date.now() - 7200000).toISOString(),
+    expireTime: new Date(Date.now() - 3600000).toISOString(),
+    tags: ['蛋奶素'],
+    imageUrl: '/images/food6.jpg',
+    imageColor: 'bg-amber-100'
   }
 ];

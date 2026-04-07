@@ -1,70 +1,117 @@
-import { useState, useEffect } from 'react';
-import { INITIAL_PROFILE, ACHIEVEMENTS_DATA } from '../data/constants';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { ACHIEVEMENTS_DATA } from '../data/constants';
+
+// ── DB (snake_case) → 前端 (camelCase) ──────────────────────────────────────
+const mapProfile = (raw) => ({
+  id:          raw.id,
+  displayName: raw.display_name,
+  avatarUrl:   raw.avatar_url,
+  ntuEmail:    raw.ntu_email,
+  stats: {
+    exp:              raw.exp,
+    savedCount:       raw.saved_count,
+    savedWeight:      parseFloat(raw.saved_weight),
+    nightOwlActions:  raw.night_owl_actions,
+  },
+  unlockedAchievements: raw.unlocked_achievements ?? [],
+  settings: {
+    showNearbyAlert:      raw.show_nearby_alert,
+    notificationRadius:   raw.notification_radius,
+  },
+});
+
+// ────────────────────────────────────────────────────────────────────────────
 
 export const useProfile = (triggerToast) => {
-  const [profile, setProfile] = useState(() => {
-    try {
-      const saved = localStorage.getItem('time-machine-profile');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          ...INITIAL_PROFILE,
-          ...parsed,
-          settings: {
-            ...INITIAL_PROFILE.settings,
-            ...(parsed.settings || {})
-          }
-        };
-      }
-    } catch (e) {
-      console.error("Profile 資料解析失敗:", e);
-    }
-    return INITIAL_PROFILE;
-  });
+  const { user } = useAuth();
+  const [profile, setProfileState] = useState(null);
 
+  // ── 登入後載入 profile ──────────────────────────────────────────────────
   useEffect(() => {
-    localStorage.setItem('time-machine-profile', JSON.stringify(profile));
-  }, [profile]);
+    if (!user) { setProfileState(null); return; }
+
+    const fetchProfile = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (!error && data) setProfileState(mapProfile(data));
+    };
+
+    fetchProfile();
+  }, [user]);
 
   /**
-   * 核心邏輯：更新數據並檢查是否有新成就解鎖
-   * @param {Function} updateFn - 更新 stats 的函數
-   * @returns {Object|null} - 如果有新解鎖的成就，回傳該成就物件，否則回傳 null
+   * 核心邏輯（async 版）：更新遊戲化數據並檢查成就解鎖
+   * @param {Function} updateFn - 接收 stats，回傳新 stats 的函數
+   * @returns {Object|null} 新解鎖的成就物件，或 null
    */
-  const updateStatsAndCheckAchievements = (updateFn) => {
-    let newlyUnlocked = null;
+  const updateStats = useCallback(async (updateFn) => {
+    if (!user || !profile) return null;
 
-    setProfile(prev => {
-      const newStats = updateFn(prev.stats);
-      const currentUnlocked = prev.unlockedAchievements || [];
-      
-      // 找出符合條件但尚未解鎖的成就
-      // 邏輯範例：savedCount 達到 5 (見習生), 10 (大師)
-      const possibleNewAch = ACHIEVEMENTS_DATA.find(ach => {
-        if (currentUnlocked.includes(ach.id)) return false;
-        
-        // 簡單門檻判斷 (可根據 constants.js 的 rule 擴充)
-        if (ach.id === 'food_saver_1' && newStats.savedCount >= 5) return true;
-        if (ach.id === 'food_saver_2' && newStats.savedCount >= 10) return true;
-        if (ach.id === 'night_owl' && newStats.nightOwlActions >= 1) return true;
-        
-        return false;
-      });
+    const newStats       = updateFn(profile.stats);
+    const currentUnlocked = profile.unlockedAchievements;
 
-      if (possibleNewAch) {
-        newlyUnlocked = possibleNewAch;
-        return {
-          ...prev,
-          stats: newStats,
-          unlockedAchievements: [...currentUnlocked, possibleNewAch.id]
-        };
-      }
-
-      return { ...prev, stats: newStats };
+    // 成就門檻檢查（與原版邏輯完全一致）
+    const possibleNewAch = ACHIEVEMENTS_DATA.find(ach => {
+      if (currentUnlocked.includes(ach.id)) return false;
+      if (ach.id === 'food_saver_1' && newStats.savedCount >= 5)      return true;
+      if (ach.id === 'food_saver_2' && newStats.savedCount >= 10)     return true;
+      if (ach.id === 'night_owl'    && newStats.nightOwlActions >= 1) return true;
+      return false;
     });
 
-    return newlyUnlocked;
-  };
+    const newUnlocked = possibleNewAch
+      ? [...currentUnlocked, possibleNewAch.id]
+      : currentUnlocked;
 
-  return { profile, setProfile, updateStats: updateStatsAndCheckAchievements };
+    // 寫入 Supabase
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        exp:                    newStats.exp,
+        saved_count:            newStats.savedCount,
+        saved_weight:           newStats.savedWeight,
+        night_owl_actions:      newStats.nightOwlActions,
+        unlocked_achievements:  newUnlocked,
+      })
+      .eq('id', user.id);
+
+    if (error) {
+      console.error('updateStats error:', error);
+      triggerToast('數據更新失敗', 'error');
+      return null;
+    }
+
+    // Optimistic UI update
+    setProfileState(prev => ({
+      ...prev,
+      stats: newStats,
+      unlockedAchievements: newUnlocked,
+    }));
+
+    return possibleNewAch ?? null;
+  }, [user, profile]);
+
+  /**
+   * 更新設定或個人資料（displayName、settings 等）
+   * 採用 Optimistic Update：先更新 UI，再非同步寫入 DB
+   */
+  const setProfile = useCallback(async (updater) => {
+    if (!user) return;
+    const updated = typeof updater === 'function' ? updater(profile) : updater;
+    setProfileState(updated); // 立即更新 UI
+
+    await supabase.from('profiles').update({
+      display_name:         updated.displayName,
+      show_nearby_alert:    updated.settings?.showNearbyAlert,
+      notification_radius:  updated.settings?.notificationRadius,
+    }).eq('id', user.id);
+  }, [user, profile]);
+
+  return { profile, setProfile, updateStats };
 };

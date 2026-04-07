@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { CheckCircle, AlertCircle, Award, X, Sparkles, PartyPopper } from 'lucide-react';
+import { useAuth } from './contexts/AuthContext';
+import LoginView from './views/LoginView';
 
 // Hooks & Services
 import { usePosts } from './hooks/usePosts';
@@ -11,19 +13,20 @@ import PostFoodView from './views/PostFoodView';
 import ProfileView from './views/ProfileView';
 import NotificationSettingsView from './views/NotificationSettingsView';
 import CarbonImpactView from './views/CarbonImpactView';
-import HistoryView from './views/HistoryView'; // 新增
+import HistoryView from './views/HistoryView';
 
 // UI Components
 import FloatingNav from './components/shared/FloatingNav';
 import PostDetailModal from './components/shared/PostDetailModal';
 import FilterModal from './components/shared/FilterModal';
+import SharePostModal from './components/shared/SharePostModal';
 import { SWUpdateToast } from './components/shared/SWUpdateToast';
 
 const AchievementModal = ({ achievement, onClose }) => {
   if (!achievement) return null;
   return (
     <div className="fixed inset-0 z-[5000] flex items-center justify-center p-6 bg-emerald-950/90 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="relative w-full max-sm bg-white dark:bg-zinc-900 rounded-[40px] p-8 text-center shadow-2xl animate-in zoom-in-95 duration-300">
+      <div className="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-[40px] p-8 text-center shadow-2xl animate-in zoom-in-95 duration-300">
         <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-24 h-24 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center shadow-lg ring-8 ring-emerald-950/90">
           <PartyPopper className="w-12 h-12 text-white animate-bounce" />
         </div>
@@ -49,7 +52,17 @@ const AchievementModal = ({ achievement, onClose }) => {
 };
 
 export default function TimeMachineApp() {
-  const [activeTab, setActiveTab] = useState('home'); 
+  const { user, loading } = useAuth();
+
+  // Auth gate：loading 中顯示 spinner，未登入顯示登入頁
+  if (loading) return (
+    <div className="flex items-center justify-center h-screen bg-stone-50 dark:bg-zinc-950">
+      <div className="animate-spin text-4xl text-emerald-500">⌛</div>
+    </div>
+  );
+  if (!user) return <LoginView />;
+
+  const [activeTab, setActiveTab] = useState('home');
   const [isDark, setIsDark] = useState(localStorage.getItem('theme') === 'dark');
   const [showToast, setShowToast] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null); 
@@ -61,6 +74,8 @@ export default function TimeMachineApp() {
   const [globalFilterState, setGlobalFilterState] = useState({
     selectedTypes: [], selectedTags: [], minQuantity: 1,    
   });
+
+  const [showShareModal, setShowShareModal] = useState(false);
 
   useEffect(() => {
     if (isDark) {
@@ -104,7 +119,7 @@ export default function TimeMachineApp() {
     const success = await updatePostStatus(post, 'taken');
     if (success) {
       const isNight = new Date().getHours() >= 22;
-      const newAch = updateStats(stats => ({
+      const newAch = await updateStats(stats => ({
         ...stats,
         exp: stats.exp + 50,
         savedCount: stats.savedCount + 1,
@@ -127,6 +142,10 @@ export default function TimeMachineApp() {
        setActiveTab('home');
        triggerToast('發布成功！', 'success');
     }
+  };
+
+  const handleSharePost = (post) => {
+    setShowShareModal(true);
   };
 
   return (
@@ -170,15 +189,26 @@ export default function TimeMachineApp() {
           <HistoryView setActiveTab={setActiveTab} posts={posts} />
         )}
 
+        {/* 確保這裡有傳入 onShare */}
         <PostDetailModal 
           selectedPost={selectedPost} setSelectedPost={setSelectedPost}
           triggerToast={triggerToast} onTaken={handlePostTaken} onReserve={handlePostReserve}
+          onShare={handleSharePost} 
         />
 
         <FilterModal 
           show={showFilterModal} onClose={() => setShowFilterModal(false)} 
           initialState={globalFilterState} onApply={setGlobalFilterState} 
         />
+
+        {/* 確保這裡只有在 showShareModal 為真時才渲染 */}
+        {showShareModal && (
+          <SharePostModal 
+            post={selectedPost} 
+            onClose={() => setShowShareModal(false)} 
+            triggerToast={triggerToast}
+          />
+        )}
 
         <AchievementModal 
           achievement={unlockedAchievement} 
