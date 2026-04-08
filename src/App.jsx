@@ -95,7 +95,7 @@ function TimeMachineApp() {
     setTimeout(() => setShowToast(null), 3000);
   }, []);
 
-  const { posts, isFetching, isMutating, updatePostStatus, addPost } = usePosts(triggerToast);
+  const { posts, isFetching, isMutating, claimPost, reservePost, addPost } = usePosts(triggerToast);
   const { profile, setProfile, updateStats } = useProfile(triggerToast);
 
   // 預設 profile，避免 null 時整棵 component tree 被銷毀
@@ -121,31 +121,37 @@ function TimeMachineApp() {
   };
 
   const handlePostReserve = async (post) => {
-    const success = await updatePostStatus(post, 'reserved');
+    const success = await reservePost(post);
     if (success) {
       triggerToast('預訂成功！', 'success');
       setSelectedPost(null);
     }
   };
 
-  const handlePostTaken = async (post) => {
-    const success = await updatePostStatus(post, 'taken');
+  const handlePostClaim = async (post, qty = 1) => {
+    const success = await claimPost(post, qty);
     if (success) {
+      const xpGain = 50 * qty;
+      const weightGain = parseFloat((0.4 * qty).toFixed(1));
       const isNight = new Date().getHours() >= 22;
       const newAch = await updateStats(stats => ({
         ...stats,
-        exp: stats.exp + 50,
-        savedCount: stats.savedCount + 1,
-        savedWeight: parseFloat((stats.savedWeight + 0.4).toFixed(1)),
+        exp: stats.exp + xpGain,
+        savedCount: stats.savedCount + qty,
+        savedWeight: parseFloat((stats.savedWeight + weightGain).toFixed(1)),
         nightOwlActions: isNight ? stats.nightOwlActions + 1 : stats.nightOwlActions
       }));
 
       if (newAch) {
         setUnlockedAchievement(newAch);
       } else {
-        triggerToast('領取成功！ +50 XP', 'success');
+        triggerToast(`領取成功！ +${xpGain} XP`, 'success');
       }
-      setSelectedPost(null);
+      // 領完才關 modal，數量遞減時保持開啟讓用戶看到更新
+      const livePost = posts.find(p => p.id === post.id);
+      if (!livePost || livePost.quantity <= 0) {
+        setSelectedPost(null);
+      }
     }
   };
 
@@ -173,12 +179,12 @@ function TimeMachineApp() {
         )}
 
         {activeTab === 'home' && (
-          <HomeView 
-            posts={posts} setSelectedPost={setSelectedPost} 
-            userLocation={userLocation} setUserLocation={setUserLocation} 
+          <HomeView
+            posts={posts} setSelectedPost={setSelectedPost}
+            userLocation={userLocation} setUserLocation={setUserLocation}
             onLocateMe={handleLocateMe} isLocating={isLocating}
             setActiveTab={setActiveTab} globalFilterState={globalFilterState}
-            setShowFilterModal={setShowFilterModal} onPostTaken={handlePostTaken}
+            setShowFilterModal={setShowFilterModal} onPostClaim={handlePostClaim}
             onPostReserve={handlePostReserve} showNearbyAlert={safeProfile.settings?.showNearbyAlert}
           />
         )}
@@ -204,10 +210,11 @@ function TimeMachineApp() {
         )}
 
         {/* 確保這裡有傳入 onShare */}
-        <PostDetailModal 
+        <PostDetailModal
           selectedPost={selectedPost} setSelectedPost={setSelectedPost}
-          triggerToast={triggerToast} onTaken={handlePostTaken} onReserve={handlePostReserve}
-          onShare={handleSharePost} 
+          posts={posts} triggerToast={triggerToast}
+          onClaim={handlePostClaim} onReserve={handlePostReserve}
+          onShare={handleSharePost} isMutating={isMutating}
         />
 
         <FilterModal 

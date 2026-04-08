@@ -17,7 +17,7 @@ const HomeView = ({
   setActiveTab,
   globalFilterState, 
   setShowFilterModal,
-  onPostTaken,
+  onPostClaim,
   onPostReserve,
   showNearbyAlert 
 }) => {
@@ -97,7 +97,7 @@ const HomeView = ({
       </div>
 
       {showNearbyAlert && nearbyPostAlert && !isAlertDismissed && (
-        <ProximityAlertBar post={nearbyPostAlert} onTake={onPostTaken} onDetail={setSelectedPost} onClose={() => setIsAlertDismissed(true)} />
+        <ProximityAlertBar post={nearbyPostAlert} onTake={(p) => onPostClaim(p, 1)} onDetail={setSelectedPost} onClose={() => setIsAlertDismissed(true)} />
       )}
 
       {/* 地圖區域 */}

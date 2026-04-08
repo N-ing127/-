@@ -133,58 +133,91 @@ export const usePosts = (triggerToast) => {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchPosts]);
 
-  // ── Optimistic 更新狀態（含數量遞減邏輯）────────────────────────────
-  const updatePostStatus = useCallback(async (post, newStatus) => {
-    if (!supabase) return false;
+  // ── 領取惜食（透過 RPC 原子操作，防 race condition）────────────────
+  const claimPost = useCallback(async (post, claimQty = 1) => {
+    if (!supabase || !user) return false;
     setIsMutating(true);
 
-    // 領取邏輯：quantity > 1 時遞減，= 1 時才標記 taken
     const currentQty = parseInt(post.quantity) || 1;
-    const isClaim = newStatus === 'taken';
-    const shouldDecrement = isClaim && currentQty > 1;
-    const effectiveStatus = shouldDecrement ? 'available' : newStatus;
-    const newQty = shouldDecrement ? currentQty - 1 : (isClaim ? 0 : currentQty);
+    const newQty = Math.max(0, currentQty - claimQty);
+    const willBeGone = newQty <= 0;
 
-    // 1. 用 functional setState 取得真實快照做 rollback
+    // 1. Optimistic UI（用 functional setState 取真實快照）
     let snapshot = null;
     setPosts(prev => {
-      snapshot = prev; // 捕獲真實當前狀態
-      if (['taken', 'expired'].includes(effectiveStatus) && !shouldDecrement) {
-        return prev.filter(p => p.id !== post.id);
-      }
+      snapshot = prev;
+      if (willBeGone) return prev.filter(p => p.id !== post.id);
       return prev.map(p =>
-        p.id === post.id
-          ? { ...p, status: effectiveStatus, quantity: newQty }
-          : p
+        p.id === post.id ? { ...p, quantity: newQty } : p
       );
     });
 
     try {
-      const updatePayload = { status: effectiveStatus };
-      if (isClaim) updatePayload.quantity = newQty;
+      // 2. 呼叫 DB RPC（原子性：鎖行→檢查→遞減→寫 reservation）
+      const { data, error } = await supabase.rpc('claim_post', {
+        p_post_id: post.id,
+        p_claimer_id: user.id,
+        p_quantity: claimQty,
+      });
+      if (error) throw error;
 
-      const { error: postError } = await supabase
-        .from('posts')
-        .update(updatePayload)
-        .eq('id', post.id);
-      if (postError) throw postError;
-
-      if (newStatus === 'reserved') {
-        await supabase.from('reservations')
-          .upsert({ post_id: post.id, reserver_id: user.id, status: 'reserved' });
-      } else if (isClaim) {
-        await supabase.from('reservations')
-          .upsert({
-            post_id: post.id, reserver_id: user.id,
-            status: 'taken', taken_at: new Date().toISOString(),
-          });
+      // RPC 回傳 { success, new_quantity, new_status, error }
+      if (!data?.success) {
+        const errMap = {
+          CANNOT_CLAIM_OWN:      '不能領取自己發布的食物',
+          NOT_AVAILABLE:         '此惜食已被領取或已截止',
+          INSUFFICIENT_QUANTITY: '數量不足，已被其他人領取',
+          POST_NOT_FOUND:        '找不到此惜食',
+        };
+        throw new Error(errMap[data?.error] ?? '領取失敗');
       }
+
+      // 3. 用 DB 回傳的真實值校正 UI（防止 optimistic 與 DB 不一致）
+      const dbQty = data.new_quantity;
+      const dbStatus = data.new_status;
+      setPosts(prev => {
+        if (dbStatus === 'taken') return prev.filter(p => p.id !== post.id);
+        return prev.map(p =>
+          p.id === post.id ? { ...p, quantity: dbQty, status: dbStatus } : p
+        );
+      });
 
       return true;
     } catch (error) {
-      console.error('updatePostStatus error:', error);
-      if (snapshot) setPosts(snapshot); // 用真實快照回滾
-      triggerToast('更新失敗，請重試', 'error');
+      console.error('claimPost error:', error);
+      if (snapshot) setPosts(snapshot);
+      triggerToast(error.message || '領取失敗，請重試', 'error');
+      return false;
+    } finally {
+      setIsMutating(false);
+    }
+  }, [user, triggerToast]);
+
+  // ── 預訂（僅改狀態，不動數量）──────────────────────────────────────
+  const reservePost = useCallback(async (post) => {
+    if (!supabase || !user) return false;
+    setIsMutating(true);
+
+    let snapshot = null;
+    setPosts(prev => {
+      snapshot = prev;
+      return prev.map(p =>
+        p.id === post.id ? { ...p, status: 'reserved' } : p
+      );
+    });
+
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .update({ status: 'reserved' })
+        .eq('id', post.id);
+      if (error) throw error;
+
+      return true;
+    } catch (error) {
+      console.error('reservePost error:', error);
+      if (snapshot) setPosts(snapshot);
+      triggerToast('預訂失敗，請重試', 'error');
       return false;
     } finally {
       setIsMutating(false);
@@ -230,6 +263,5 @@ export const usePosts = (triggerToast) => {
     }
   }, [user]);
 
-  // 向後相容：isLoading 仍然可用（映射到 isFetching）
-  return { posts, isLoading: isFetching, isFetching, isMutating, updatePostStatus, addPost };
+  return { posts, isLoading: isFetching, isFetching, isMutating, claimPost, reservePost, addPost };
 };

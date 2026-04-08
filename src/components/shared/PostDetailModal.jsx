@@ -1,15 +1,24 @@
-import React from 'react';
-import { X, MapPin, Clock, Utensils, Tag, Info, User, Share2, CalendarDays, Hourglass, CheckCircle2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, MapPin, Clock, Utensils, User, Share2, CalendarDays, Hourglass, CheckCircle2, Minus, Plus, Loader2 } from 'lucide-react';
 import Button from '../ui/Button';
 import { LOCATIONS } from '../../data/constants';
 
-const PostDetailModal = ({ selectedPost, setSelectedPost, triggerToast, onTaken, onReserve, onShare }) => {
-  if (!selectedPost) return null;
+const PostDetailModal = ({ selectedPost, setSelectedPost, posts, triggerToast, onClaim, onReserve, onShare, isMutating }) => {
+  const [claimQty, setClaimQty] = useState(1);
 
-  const location = LOCATIONS.find(loc => loc.id === selectedPost.locationId);
+  // 從最新 posts 取得即時數據（selectedPost 可能是 stale snapshot）
+  const livePost = useMemo(() => {
+    if (!selectedPost) return null;
+    return posts?.find(p => p.id === selectedPost.id) ?? selectedPost;
+  }, [selectedPost, posts]);
 
-  const pickupTime = new Date(selectedPost.pickupTime);
-  const expireTime = new Date(selectedPost.expireTime);
+  if (!livePost) return null;
+
+  const location = LOCATIONS.find(loc => loc.id === livePost.locationId);
+  const currentQty = parseInt(livePost.quantity) || 0;
+
+  const pickupTime = new Date(livePost.pickupTime);
+  const expireTime = new Date(livePost.expireTime);
   const now = new Date();
 
   const timeOptions = { hour: '2-digit', minute: '2-digit', hour12: false };
@@ -30,45 +39,44 @@ const PostDetailModal = ({ selectedPost, setSelectedPost, triggerToast, onTaken,
   };
 
   const isExpired = timeLeft <= 0;
-  const isReserved = selectedPost.status === 'reserved';
-  const isTaken = selectedPost.status === 'taken';
+  const isTaken = livePost.status === 'taken' || currentQty <= 0;
+  const isAvailable = !isExpired && !isTaken;
 
-  const handleTakenClick = () => {
-    if (window.confirm('確定要領取這份惜食嗎？')) {
-      onTaken(selectedPost);
-    }
-  };
+  // 領取數量上限 = 剩餘數量
+  const maxClaim = currentQty;
+  const safeClaimQty = Math.min(claimQty, maxClaim);
 
-  const handleReserveClick = () => {
-    if (window.confirm('確定要預訂這份惜食嗎？')) {
-      onReserve(selectedPost);
+  const handleClaim = () => {
+    if (safeClaimQty < 1) return;
+    const msg = safeClaimQty === 1
+      ? '確定要領取 1 份嗎？'
+      : `確定要領取 ${safeClaimQty} 份嗎？`;
+    if (window.confirm(msg)) {
+      onClaim(livePost, safeClaimQty);
     }
   };
 
   return (
     <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="relative w-full max-w-md bg-stone-50 dark:bg-zinc-950 rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-        <button onClick={() => setSelectedPost(null)} className="absolute top-5 right-5 p-2 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-400 hover:text-gray-600 transition-colors z-10">
+      <div className="relative w-full max-w-md bg-stone-50 dark:bg-zinc-950 rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
+        <button onClick={() => { setSelectedPost(null); setClaimQty(1); }} className="absolute top-5 right-5 p-2 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-400 hover:text-gray-600 transition-colors z-10">
           <X className="w-5 h-5" />
         </button>
 
         {/* 圖片區域 */}
         <div className="relative h-64 w-full bg-gradient-to-br from-emerald-200 to-teal-300 dark:from-zinc-800 dark:to-zinc-900 overflow-hidden">
-          {selectedPost.imageUrl && (
-            <img src={selectedPost.imageUrl} alt={selectedPost.foodType} className="w-full h-full object-cover" />
+          {livePost.imageUrl && (
+            <img src={livePost.imageUrl} alt={livePost.foodType} className="w-full h-full object-cover" />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
-          
+
           {isExpired && <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white text-2xl font-black">已截止</div>}
-          {isTaken && <div className="absolute inset-0 flex items-center justify-center bg-emerald-600/80 text-white text-2xl font-black"><CheckCircle2 className="w-8 h-8 mr-3"/>已領取</div>}
-          {isReserved && !isTaken && !isExpired && (
-            <div className="absolute inset-0 flex items-center justify-center bg-amber-500/80 text-white text-2xl font-black">已預訂</div>
-          )}
+          {isTaken && !isExpired && <div className="absolute inset-0 flex items-center justify-center bg-emerald-600/80 text-white text-2xl font-black"><CheckCircle2 className="w-8 h-8 mr-3"/>已領完</div>}
 
           {/* 分享按鈕 */}
-          {!isExpired && !isTaken && (
-            <button 
-              onClick={() => onShare(selectedPost)} 
+          {isAvailable && (
+            <button
+              onClick={() => onShare(livePost)}
               className="absolute top-5 left-5 p-2 rounded-full bg-white/20 backdrop-blur-md text-white shadow-md hover:bg-white/30 transition-colors"
             >
               <Share2 className="w-5 h-5" />
@@ -76,8 +84,10 @@ const PostDetailModal = ({ selectedPost, setSelectedPost, triggerToast, onTaken,
           )}
 
           <div className="absolute bottom-5 left-5 text-white">
-            <h3 className="text-3xl font-black drop-shadow-lg">{selectedPost.foodType}</h3>
-            <p className="text-emerald-100 text-sm drop-shadow-md">{selectedPost.quantity}{selectedPost.unit} | {selectedPost.tags.join(', ')}</p>
+            <h3 className="text-3xl font-black drop-shadow-lg">{livePost.foodType}</h3>
+            <p className="text-emerald-100 text-sm drop-shadow-md">
+              剩 {currentQty} {livePost.unit} | {livePost.tags?.join(', ')}
+            </p>
           </div>
         </div>
 
@@ -87,7 +97,7 @@ const PostDetailModal = ({ selectedPost, setSelectedPost, triggerToast, onTaken,
             <MapPin className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             <div>
               <p className="font-bold">{location?.name || '未知地點'}</p>
-              <p className="text-sm text-gray-500 dark:text-zinc-400">{selectedPost.locationDetail}</p>
+              <p className="text-sm text-gray-500 dark:text-zinc-400">{livePost.locationDetail}</p>
             </div>
           </div>
 
@@ -112,7 +122,7 @@ const PostDetailModal = ({ selectedPost, setSelectedPost, triggerToast, onTaken,
             <Hourglass className="w-5 h-5 text-red-500" />
             <div>
               <p className="font-bold text-sm">剩餘時間</p>
-              <p className="text-xs text-red-500 dark:text-red-400 font-bold">{getTimeLeftString()}</p>
+              <p className={`text-xs font-bold ${isExpired ? 'text-gray-400' : 'text-red-500 dark:text-red-400'}`}>{getTimeLeftString()}</p>
             </div>
           </div>
 
@@ -120,22 +130,56 @@ const PostDetailModal = ({ selectedPost, setSelectedPost, triggerToast, onTaken,
             <User className="w-5 h-5 text-blue-500" />
             <div>
               <p className="font-bold text-sm">發布者</p>
-              <p className="text-xs text-gray-500 dark:text-zinc-400">{selectedPost.provider}</p>
+              <p className="text-xs text-gray-500 dark:text-zinc-400">{livePost.provider}</p>
             </div>
           </div>
-          
-          <div className="pt-4">
-            {!isExpired && !isTaken && (
-              <Button 
-                onClick={selectedPost.status === 'available' ? handleReserveClick : handleTakenClick} 
-                className="w-full py-4 text-lg font-black rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all"
-              >
-                {selectedPost.status === 'available' ? '預訂惜食' : '確認領取'}
-              </Button>
+
+          {/* 領取操作區 */}
+          <div className="pt-4 space-y-3">
+            {isAvailable && (
+              <>
+                {/* 數量選擇器（多份時顯示）*/}
+                {maxClaim > 1 && (
+                  <div className="flex items-center justify-center gap-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800">
+                    <span className="text-sm font-bold text-gray-600 dark:text-zinc-300">領取數量</span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setClaimQty(q => Math.max(1, q - 1))}
+                        disabled={safeClaimQty <= 1}
+                        className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-gray-600 dark:text-zinc-300 disabled:opacity-30 transition-all active:scale-90"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 w-8 text-center">{safeClaimQty}</span>
+                      <button
+                        onClick={() => setClaimQty(q => Math.min(maxClaim, q + 1))}
+                        disabled={safeClaimQty >= maxClaim}
+                        className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-gray-600 dark:text-zinc-300 disabled:opacity-30 transition-all active:scale-90"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <span className="text-xs text-gray-400">/ {maxClaim}</span>
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleClaim}
+                  disabled={isMutating}
+                  className="w-full py-4 text-lg font-black rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                >
+                  {isMutating ? (
+                    <><Loader2 className="w-5 h-5 animate-spin" /> 處理中...</>
+                  ) : (
+                    `領取 ${safeClaimQty} 份`
+                  )}
+                </Button>
+              </>
             )}
+
             {(isExpired || isTaken) && (
               <Button disabled className="w-full py-4 text-lg font-black rounded-2xl bg-gray-300 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400">
-                {isExpired ? '已截止' : '已領取'}
+                {isExpired ? '已截止' : '已領完'}
               </Button>
             )}
           </div>
