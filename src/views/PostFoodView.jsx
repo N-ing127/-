@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Camera, MapPin, Utensils, Tag, Info, Clock, ChevronLeft, X, Calendar, Plus, CheckCircle, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Camera, MapPin, Utensils, Tag, Info, Clock, ChevronLeft, X, Calendar, Plus, CheckCircle, Image as ImageIcon, Loader2 } from 'lucide-react';
 import Button from '../components/ui/Button';
 import { LOCATIONS, FOOD_TYPES, PREDEFINED_TAGS } from '../data/constants';
 import { getTodayDateString } from '../utils/helpers';
+import { uploadFoodImage } from '../lib/uploadImage';
 
 const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => { 
   const [formData, setFormData] = useState({
@@ -19,15 +20,24 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
   });
 
   const [customTagInput, setCustomTagInput] = useState('');
+  const [imageFile, setImageFile] = useState(null);       // 實際 File 物件（用於上傳）
+  const [imagePreview, setImagePreview] = useState(null);  // 本機預覽 URL
+  const [isUploading, setIsUploading] = useState(false);
 
   const formInputStyle = "w-full p-3 bg-white/70 dark:bg-zinc-900/70 rounded-xl border border-transparent dark:border-zinc-800 shadow-inner text-gray-800 dark:text-zinc-200 focus:ring-2 focus:ring-emerald-500 transition-all outline-none placeholder:text-gray-400 dark:placeholder:text-zinc-600";
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
-      const objectUrl = URL.createObjectURL(file);
-      setFormData({ ...formData, imageUrl: objectUrl });
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
     }
+  };
+
+  const clearImage = () => {
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
   };
 
   const toggleTag = (tag) => {
@@ -45,31 +55,41 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const startTimeStr = `${formData.date}T${formData.pickupTimeStr}`;
     const expireTimeStr = `${formData.date}T${formData.expireTimeStr}`;
 
-    if (!formData.imageUrl) { triggerToast('請上傳照片', 'error'); return; }
+    if (!imageFile) { triggerToast('請上傳照片', 'error'); return; }
     if (!formData.locationDetail) { triggerToast('請填寫詳細地點', 'error'); return; }
     if (parseInt(formData.quantity) <= 0) { triggerToast('數量必須大於 0', 'error'); return; }
     if (new Date(startTimeStr) >= new Date(expireTimeStr)) { triggerToast('領取時間必須早於截止時間', 'error'); return; }
     if (new Date(expireTimeStr) < new Date()) { triggerToast('截止時間已過', 'error'); return; }
 
+    // ── 上傳圖片到 Supabase Storage ──
+    setIsUploading(true);
+    const publicUrl = await uploadFoodImage(imageFile);
+    setIsUploading(false);
+
+    if (!publicUrl) { triggerToast('圖片上傳失敗，請重試', 'error'); return; }
+
+    // 從 LOCATIONS 取得座標
+    const selectedLoc = LOCATIONS.find(l => l.id === formData.locationId) || LOCATIONS[0];
+
     const newPost = {
-      id: Date.now(),
-      provider: '當前使用者', 
-      ...formData,
-      startTime: new Date().toISOString(), 
-      pickupTime: startTimeStr, 
-      expireTime: expireTimeStr, 
-      status: 'available', 
-      note: '', 
-      timestamp: Date.now(), 
-      imageColor: 'bg-emerald-100'
+      title: `${formData.foodType} ${formData.quantity}${formData.unit}`,
+      foodType: formData.foodType,
+      tags: formData.tags,
+      quantity: parseInt(formData.quantity),
+      description: formData.locationDetail,
+      imageUrl: publicUrl,
+      lat: selectedLoc.lat,
+      lng: selectedLoc.lng,
+      locationName: `${selectedLoc.name} · ${formData.locationDetail}`,
+      expiresAt: new Date(expireTimeStr).toISOString(),
     };
-    
-    onCreatePost(newPost); 
+
+    onCreatePost(newPost);
   };
 
   return (
@@ -89,14 +109,14 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
           {/* 圖片上傳區域優化 */}
           <div className="space-y-3">
             <label className="block text-sm font-bold text-gray-700 dark:text-zinc-300 ml-1">食物照片</label>
-            <div className={`relative h-64 rounded-[32px] border-2 border-dashed transition-all duration-300 overflow-hidden ${formData.imageUrl ? 'border-transparent shadow-xl' : 'border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900'}`}>
-              {formData.imageUrl ? (
+            <div className={`relative h-64 rounded-[32px] border-2 border-dashed transition-all duration-300 overflow-hidden ${imagePreview ? 'border-transparent shadow-xl' : 'border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900'}`}>
+              {imagePreview ? (
                 <>
-                  <img src={formData.imageUrl} alt="Preview" className="w-full h-full object-cover animate-in fade-in zoom-in duration-300" />
+                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover animate-in fade-in zoom-in duration-300" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
-                  <button 
-                    type="button" 
-                    onClick={(e) => {e.preventDefault(); setFormData({ ...formData, imageUrl: null });}} 
+                  <button
+                    type="button"
+                    onClick={(e) => {e.preventDefault(); clearImage();}}
                     className="absolute top-4 right-4 p-2.5 bg-red-500/90 backdrop-blur-md text-white rounded-full shadow-lg hover:bg-red-600 active:scale-90 transition-all z-20"
                   >
                     <X className="w-5 h-5" />
@@ -226,8 +246,12 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
           </div>
 
           <div className="pt-4">
-            <Button type="submit" className="w-full py-5 text-lg font-black rounded-3xl shadow-xl shadow-emerald-500/20 active:scale-[0.98] transition-all">
-              確認發布食光
+            <Button type="submit" disabled={isUploading} className="w-full py-5 text-lg font-black rounded-3xl shadow-xl shadow-emerald-500/20 active:scale-[0.98] transition-all disabled:opacity-60">
+              {isUploading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin" /> 上傳中...
+                </span>
+              ) : '確認發布食光'}
             </Button>
             <p className="text-center text-[10px] text-gray-400 dark:text-zinc-600 mt-4 px-8">
               發布即代表您確認提供之食物品質安全，並願意分享給校園夥伴。
