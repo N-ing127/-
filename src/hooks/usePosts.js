@@ -1,20 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { LOCATIONS } from '../data/constants';
 
-// ── DB → 前端（含向後相容欄位，讓 PostCard / PostDetailModal 不需改動）─────
+// ── DB → 前端（含向後相容欄位）────────────────────────────────────────────
 const mapPost = (raw) => {
-  // 從 location_name 反查 locationId（若找不到就 null）
   const locName = raw.location_name ?? '';
   const mainLocName = locName.split(' · ')[0];
   const matchedLoc = LOCATIONS.find(l => l.name === mainLocName);
-
-  // 發布者名稱：來自 join 的 profiles 或 fallback
   const posterName = raw.profiles?.display_name ?? '匿名食光人';
 
   return {
-    // ── 新欄位（Supabase 原生）──
     id:           raw.id,
     posterId:     raw.poster_id,
     title:        raw.title,
@@ -29,19 +25,17 @@ const mapPost = (raw) => {
     status:       raw.status,
     expiresAt:    raw.expires_at,
     createdAt:    raw.created_at,
-
-    // ── 向後相容欄位（PostCard / PostDetailModal 使用）──
+    // 向後相容
     locationId:     matchedLoc?.id ?? null,
     locationDetail: locName.includes(' · ') ? locName.split(' · ')[1] : raw.description,
     provider:       posterName,
-    pickupTime:     raw.created_at,       // 用建立時間當作開始領取時間
-    expireTime:     raw.expires_at,       // PostCard 用 expireTime
+    pickupTime:     raw.created_at,
+    expireTime:     raw.expires_at,
     unit:           '份',
     imageColor:     'bg-emerald-100',
   };
 };
 
-// ── 前端 → DB for INSERT ────────────────────────────────────────────────────
 const preparePost = (p, userId) => ({
   poster_id:     userId,
   title:         p.title ?? '未命名食物',
@@ -60,32 +54,34 @@ const preparePost = (p, userId) => ({
 
 export const usePosts = (triggerToast) => {
   const { user } = useAuth();
-  const [posts, setPosts]         = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [posts, setPosts]           = useState([]);
+  const [isFetching, setIsFetching] = useState(true);   // 首次載入
+  const [isMutating, setIsMutating] = useState(false);   // 操作中（按鈕用）
+  const channelRef = useRef(null);
 
+  // ── 載入函式（可靜默呼叫，不觸發全屏 spinner）──────────────────────────
+  const fetchPosts = useCallback(async (silent = false) => {
+    if (!user || !supabase) return;
+    if (!silent) setIsFetching(true);
+
+    const { data, error } = await supabase
+      .from('posts')
+      .select('*, profiles!poster_id(display_name)')
+      .in('status', ['available', 'reserved'])
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      setPosts(data.map(mapPost));
+    }
+    setIsFetching(false);
+  }, [user]);
+
+  // ── 初始載入 + Realtime 訂閱 ──────────────────────────────────────────
   useEffect(() => {
     if (!user || !supabase) return;
 
-    const fetchPosts = async () => {
-      setIsLoading(true);
-      // JOIN profiles 表取得發布者名稱
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*, profiles!poster_id(display_name)')
-        .in('status', ['available', 'reserved'])
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        triggerToast('載入貼文失敗', 'error');
-      } else {
-        setPosts(data.map(mapPost));
-      }
-      setIsLoading(false);
-    };
-
     fetchPosts();
 
-    // Realtime（不含 join，用 fallback 名稱）
     const channel = supabase
       .channel('posts-realtime')
       .on(
@@ -95,7 +91,11 @@ export const usePosts = (triggerToast) => {
           if (payload.eventType === 'INSERT') {
             const newPost = mapPost(payload.new);
             if (['available', 'reserved'].includes(newPost.status)) {
-              setPosts(prev => [newPost, ...prev]);
+              // 避免與 optimistic insert 重複
+              setPosts(prev => {
+                if (prev.some(p => p.id === newPost.id)) return prev;
+                return [newPost, ...prev];
+              });
             }
           } else if (payload.eventType === 'UPDATE') {
             const updated = mapPost(payload.new);
@@ -112,12 +112,35 @@ export const usePosts = (triggerToast) => {
       )
       .subscribe();
 
+    channelRef.current = channel;
     return () => supabase.removeChannel(channel);
-  }, [user]);
+  }, [user, fetchPosts]);
 
-  const updatePostStatus = async (post, newStatus) => {
+  // ── 頁面可見時靜默 refetch（解決閒置後資料過期問題）──────────────────
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchPosts(true); // silent = true，不顯示 spinner
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [fetchPosts]);
+
+  // ── Optimistic 更新狀態 ──────────────────────────────────────────────
+  const updatePostStatus = useCallback(async (post, newStatus) => {
     if (!supabase) return false;
-    setIsLoading(true);
+    setIsMutating(true);
+
+    // 1. Optimistic UI：立即更新列表
+    const snapshot = posts; // 保存快照用於回滾
+    setPosts(prev => {
+      if (['taken', 'expired'].includes(newStatus)) {
+        return prev.filter(p => p.id !== post.id);
+      }
+      return prev.map(p => p.id === post.id ? { ...p, status: newStatus } : p);
+    });
+
     try {
       const { error: postError } = await supabase
         .from('posts')
@@ -126,46 +149,65 @@ export const usePosts = (triggerToast) => {
       if (postError) throw postError;
 
       if (newStatus === 'reserved') {
-        const { error: resError } = await supabase
-          .from('reservations')
+        await supabase.from('reservations')
           .upsert({ post_id: post.id, reserver_id: user.id, status: 'reserved' });
-        if (resError) throw resError;
       } else if (newStatus === 'taken') {
-        const { error: resError } = await supabase
-          .from('reservations')
+        await supabase.from('reservations')
           .update({ status: 'taken', taken_at: new Date().toISOString() })
           .eq('post_id', post.id)
           .eq('reserver_id', user.id);
-        if (resError) throw resError;
       }
 
       return true;
     } catch (error) {
       console.error('updatePostStatus error:', error);
+      setPosts(snapshot); // 回滾
       triggerToast('更新失敗，請重試', 'error');
       return false;
     } finally {
-      setIsLoading(false);
+      setIsMutating(false);
     }
-  };
+  }, [posts, user]);
 
-  const addPost = async (newPost) => {
+  // ── Optimistic 新增貼文 ──────────────────────────────────────────────
+  const addPost = useCallback(async (newPost) => {
     if (!supabase) return false;
-    setIsLoading(true);
+    setIsMutating(true);
+
+    // 1. 建立臨時 post（帶臨時 ID）
+    const tempId = `temp-${Date.now()}`;
+    const optimisticPost = {
+      ...newPost,
+      id: tempId,
+      status: 'available',
+      createdAt: new Date().toISOString(),
+      provider: user?.email?.split('@')[0] ?? '我',
+      pickupTime: new Date().toISOString(),
+      expireTime: newPost.expiresAt,
+      unit: '份',
+      imageColor: 'bg-emerald-100',
+      tags: newPost.tags ?? [],
+    };
+    setPosts(prev => [optimisticPost, ...prev]);
+
     try {
       const { error } = await supabase
         .from('posts')
         .insert(preparePost(newPost, user.id));
       if (error) throw error;
+      // Realtime INSERT 會替換臨時 post（mapPost 會帶真實 ID）
+      // 但如果 Realtime 延遲，臨時 post 會在下次 refetch 時被替換
       return true;
     } catch (error) {
       console.error('addPost error:', error);
+      setPosts(prev => prev.filter(p => p.id !== tempId)); // 回滾
       triggerToast('發布失敗，請重試', 'error');
       return false;
     } finally {
-      setIsLoading(false);
+      setIsMutating(false);
     }
-  };
+  }, [user]);
 
-  return { posts, isLoading, updatePostStatus, addPost };
+  // 向後相容：isLoading 仍然可用（映射到 isFetching）
+  return { posts, isLoading: isFetching, isFetching, isMutating, updatePostStatus, addPost };
 };

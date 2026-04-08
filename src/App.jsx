@@ -95,15 +95,18 @@ function TimeMachineApp() {
     setTimeout(() => setShowToast(null), 3000);
   }, []);
 
-  const { posts, isLoading, updatePostStatus, addPost } = usePosts(triggerToast);
+  const { posts, isFetching, isMutating, updatePostStatus, addPost } = usePosts(triggerToast);
   const { profile, setProfile, updateStats } = useProfile(triggerToast);
 
-  // profile 從 Supabase 非同步載入，尚未到位時顯示 spinner
-  if (!profile) return (
-    <div className="flex items-center justify-center h-screen bg-stone-50 dark:bg-zinc-950">
-      <div className="animate-spin text-4xl text-emerald-500">⌛</div>
-    </div>
-  );
+  // 預設 profile，避免 null 時整棵 component tree 被銷毀
+  const safeProfile = profile ?? {
+    name: '載入中…', displayName: '載入中…',
+    department: '', avatar: null, banner: null,
+    avatarUrl: null, bannerUrl: null,
+    stats: { exp: 0, level: 1, nextLevelExp: 200, savedCount: 0, savedWeight: 0, nightOwlActions: 0 },
+    unlockedAchievements: [],
+    settings: { showNearbyAlert: false, notificationRadius: 500 },
+  };
 
   const handleLocateMe = () => {
     setIsLocating(true);
@@ -162,7 +165,8 @@ function TimeMachineApp() {
     <div className="flex flex-col h-screen max-w-md mx-auto bg-stone-50 dark:bg-zinc-950 shadow-2xl overflow-hidden font-sans text-gray-800 dark:text-zinc-100 relative transition-colors">
       <SWUpdateToast />
       <main className="flex-1 overflow-hidden relative z-0">
-        {isLoading && activeTab === 'home' && (
+        {/* 僅首次載入顯示 overlay，靜默 refetch 不會觸發 */}
+        {isFetching && activeTab === 'home' && (
            <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm">
              <div className="animate-spin text-4xl text-emerald-500">⌛</div>
            </div>
@@ -175,7 +179,7 @@ function TimeMachineApp() {
             onLocateMe={handleLocateMe} isLocating={isLocating}
             setActiveTab={setActiveTab} globalFilterState={globalFilterState}
             setShowFilterModal={setShowFilterModal} onPostTaken={handlePostTaken}
-            onPostReserve={handlePostReserve} showNearbyAlert={profile.settings?.showNearbyAlert}
+            onPostReserve={handlePostReserve} showNearbyAlert={safeProfile.settings?.showNearbyAlert}
           />
         )}
 
@@ -184,15 +188,15 @@ function TimeMachineApp() {
         )}
 
         {activeTab === 'profile' && (
-          <ProfileView setActiveTab={setActiveTab} profile={profile} setProfile={setProfile} isDark={isDark} setIsDark={setIsDark} />
+          <ProfileView setActiveTab={setActiveTab} profile={safeProfile} setProfile={setProfile} isDark={isDark} setIsDark={setIsDark} />
         )}
 
         {activeTab === 'notifications' && (
-          <NotificationSettingsView setActiveTab={setActiveTab} profile={profile} setProfile={setProfile} />
+          <NotificationSettingsView setActiveTab={setActiveTab} profile={safeProfile} setProfile={setProfile} />
         )}
 
         {activeTab === 'carbon_impact' && (
-          <CarbonImpactView setActiveTab={setActiveTab} profile={profile} />
+          <CarbonImpactView setActiveTab={setActiveTab} profile={safeProfile} />
         )}
 
         {activeTab === 'history' && (
