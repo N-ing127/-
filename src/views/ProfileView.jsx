@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  CheckCircle, Settings, Camera, Award, Leaf, X, 
-  Megaphone, Moon, Sun, User, ChevronRight
+import {
+  CheckCircle, Settings, Camera, Award, Leaf, X,
+  Megaphone, Moon, Sun, User, ChevronRight, LogOut
 } from 'lucide-react';
 import { ACHIEVEMENTS_DATA } from '../data/constants';
 import AnimatedStatCard from '../components/shared/AnimatedStatCard';
+import { uploadFoodImage } from '../lib/uploadImage';
+import { useAuth } from '../contexts/AuthContext';
 
 const ICON_MAP = {
   'Megaphone': Megaphone,
@@ -14,6 +16,7 @@ const ICON_MAP = {
 };
 
 const ProfileView = ({ setActiveTab, profile, setProfile, isDark, setIsDark }) => {
+  const { signOut } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState({
     name: profile?.name || '惜食者',
@@ -21,6 +24,10 @@ const ProfileView = ({ setActiveTab, profile, setProfile, isDark, setIsDark }) =
     banner: profile?.banner || null,
     avatar: profile?.avatar || null
   });
+
+  // 暫存實際 File 物件（用於上傳到 Supabase Storage）
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [bannerFile, setBannerFile] = useState(null);
 
   useEffect(() => {
     if (profile) {
@@ -38,18 +45,41 @@ const ProfileView = ({ setActiveTab, profile, setProfile, isDark, setIsDark }) =
     if (file) {
       const objectUrl = URL.createObjectURL(file);
       setEditData(prev => ({ ...prev, [type]: objectUrl }));
+      if (type === 'avatar') setAvatarFile(file);
+      if (type === 'banner') setBannerFile(file);
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // 上傳新圖片到 Supabase Storage（如果有更換）
+    let finalAvatar = editData.avatar;
+    let finalBanner = editData.banner;
+
+    if (avatarFile) {
+      const url = await uploadFoodImage(avatarFile);
+      if (url) finalAvatar = url;
+    }
+    if (bannerFile) {
+      const url = await uploadFoodImage(bannerFile);
+      if (url) finalBanner = url;
+    }
+
     setProfile(prev => ({
       ...prev,
       name: editData.name,
       department: editData.department,
-      banner: editData.banner,
-      avatar: editData.avatar
+      banner: finalBanner,
+      avatar: finalAvatar,
     }));
+    setAvatarFile(null);
+    setBannerFile(null);
     setIsEditing(false);
+  };
+
+  const handleLogout = async () => {
+    if (window.confirm('確定要登出嗎？')) {
+      await signOut();
+    }
   };
 
   const expPercentage = profile?.stats 
@@ -148,6 +178,14 @@ const ProfileView = ({ setActiveTab, profile, setProfile, isDark, setIsDark }) =
              </div>
            </div>
         </div>
+
+        {/* 登出按鈕 */}
+        <button
+          onClick={handleLogout}
+          className="w-full mt-4 flex items-center justify-center gap-2 p-3 bg-red-50 dark:bg-red-950/20 text-red-500 font-bold text-sm rounded-2xl border border-red-100 dark:border-red-900/30 hover:bg-red-100 dark:hover:bg-red-950/40 transition-colors"
+        >
+          <LogOut className="w-4 h-4" /> 登出帳號
+        </button>
 
         <div className="mt-6 mb-4">
           <h3 className="font-bold text-gray-800 dark:text-zinc-100 text-lg mb-3 px-1 text-sm uppercase tracking-widest">成就勳章</h3>

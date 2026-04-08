@@ -3,24 +3,36 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { ACHIEVEMENTS_DATA } from '../data/constants';
 
-// ── DB (snake_case) → 前端 (camelCase) ──────────────────────────────────────
-const mapProfile = (raw) => ({
-  id:          raw.id,
-  displayName: raw.display_name,
-  avatarUrl:   raw.avatar_url,
-  ntuEmail:    raw.ntu_email,
-  stats: {
-    exp:              raw.exp,
-    savedCount:       raw.saved_count,
-    savedWeight:      parseFloat(raw.saved_weight),
-    nightOwlActions:  raw.night_owl_actions,
-  },
-  unlockedAchievements: raw.unlocked_achievements ?? [],
-  settings: {
-    showNearbyAlert:      raw.show_nearby_alert,
-    notificationRadius:   raw.notification_radius,
-  },
-});
+// ── DB → 前端（含向後相容欄位，讓 ProfileView 不需改動）────────────────────
+const mapProfile = (raw) => {
+  const level = raw.level ?? Math.floor(raw.exp / 200) + 1;
+  return {
+    id:          raw.id,
+    displayName: raw.display_name,
+    avatarUrl:   raw.avatar_url,
+    ntuEmail:    raw.ntu_email,
+    department:  raw.department ?? '未設定系級',
+    bannerUrl:   raw.banner_url,
+    stats: {
+      exp:              raw.exp,
+      level:            level,
+      nextLevelExp:     level * 200,
+      savedCount:       raw.saved_count,
+      savedWeight:      parseFloat(raw.saved_weight),
+      nightOwlActions:  raw.night_owl_actions,
+    },
+    unlockedAchievements: raw.unlocked_achievements ?? [],
+    settings: {
+      showNearbyAlert:    raw.show_nearby_alert,
+      notificationRadius: raw.notification_radius,
+    },
+
+    // ── 向後相容欄位（ProfileView 使用）──
+    name:       raw.display_name,
+    avatar:     raw.avatar_url,
+    banner:     raw.banner_url,
+  };
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -28,12 +40,10 @@ export const useProfile = (triggerToast) => {
   const { user } = useAuth();
   const [profile, setProfileState] = useState(null);
 
-  // ── 登入後載入 profile ──────────────────────────────────────────────────
   useEffect(() => {
     if (!user || !supabase) { setProfileState(null); return; }
 
     const fetchProfile = async () => {
-      // 使用 maybeSingle() 而非 single()，避免 0 行時回傳 406
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -43,7 +53,6 @@ export const useProfile = (triggerToast) => {
       if (data) {
         setProfileState(mapProfile(data));
       } else {
-        // profile 尚未建立（RLS 或時序問題），嘗試自動建立
         const { data: newProfile, error: insertErr } = await supabase
           .from('profiles')
           .insert({
@@ -57,7 +66,6 @@ export const useProfile = (triggerToast) => {
         if (newProfile) {
           setProfileState(mapProfile(newProfile));
         } else {
-          // Foreign key 失敗 = auth session 過期/用戶已刪除，強制登出
           console.error('Profile fetch/create failed:', error, insertErr);
           await supabase.auth.signOut();
         }
@@ -67,18 +75,12 @@ export const useProfile = (triggerToast) => {
     fetchProfile();
   }, [user]);
 
-  /**
-   * 核心邏輯（async 版）：更新遊戲化數據並檢查成就解鎖
-   * @param {Function} updateFn - 接收 stats，回傳新 stats 的函數
-   * @returns {Object|null} 新解鎖的成就物件，或 null
-   */
   const updateStats = useCallback(async (updateFn) => {
     if (!user || !profile) return null;
 
-    const newStats       = updateFn(profile.stats);
+    const newStats        = updateFn(profile.stats);
     const currentUnlocked = profile.unlockedAchievements;
 
-    // 成就門檻檢查（與原版邏輯完全一致）
     const possibleNewAch = ACHIEVEMENTS_DATA.find(ach => {
       if (currentUnlocked.includes(ach.id)) return false;
       if (ach.id === 'food_saver_1' && newStats.savedCount >= 5)      return true;
@@ -91,7 +93,6 @@ export const useProfile = (triggerToast) => {
       ? [...currentUnlocked, possibleNewAch.id]
       : currentUnlocked;
 
-    // 寫入 Supabase
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -109,10 +110,9 @@ export const useProfile = (triggerToast) => {
       return null;
     }
 
-    // Optimistic UI update
     setProfileState(prev => ({
       ...prev,
-      stats: newStats,
+      stats: { ...newStats, level: Math.floor(newStats.exp / 200) + 1, nextLevelExp: (Math.floor(newStats.exp / 200) + 1) * 200 },
       unlockedAchievements: newUnlocked,
     }));
 
@@ -120,18 +120,34 @@ export const useProfile = (triggerToast) => {
   }, [user, profile]);
 
   /**
-   * 更新設定或個人資料（displayName、settings 等）
-   * 採用 Optimistic Update：先更新 UI，再非同步寫入 DB
+   * 更新個人資料（name, department, avatar, banner, settings）
+   * ProfileView 傳入的 updater 使用舊欄位名（name, avatar, banner）
+   * 這裡轉換成 Supabase 欄位寫入
    */
   const setProfile = useCallback(async (updater) => {
-    if (!user) return;
+    if (!user || !supabase) return;
     const updated = typeof updater === 'function' ? updater(profile) : updater;
-    setProfileState(updated); // 立即更新 UI
 
+    // Optimistic UI（同時維護新舊欄位名）
+    const merged = {
+      ...updated,
+      displayName: updated.name ?? updated.displayName,
+      avatarUrl:   updated.avatar ?? updated.avatarUrl,
+      bannerUrl:   updated.banner ?? updated.bannerUrl,
+      name:        updated.name ?? updated.displayName,
+      avatar:      updated.avatar ?? updated.avatarUrl,
+      banner:      updated.banner ?? updated.bannerUrl,
+    };
+    setProfileState(merged);
+
+    // 寫入 Supabase
     await supabase.from('profiles').update({
-      display_name:         updated.displayName,
-      show_nearby_alert:    updated.settings?.showNearbyAlert,
-      notification_radius:  updated.settings?.notificationRadius,
+      display_name:         merged.displayName,
+      department:           merged.department ?? null,
+      avatar_url:           merged.avatarUrl,
+      banner_url:           merged.bannerUrl,
+      show_nearby_alert:    merged.settings?.showNearbyAlert,
+      notification_radius:  merged.settings?.notificationRadius,
     }).eq('id', user.id);
   }, [user, profile]);
 

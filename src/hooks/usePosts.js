@@ -1,43 +1,60 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { LOCATIONS } from '../data/constants';
 
-// ── DB (snake_case) → 前端 (camelCase) ──────────────────────────────────────
-const mapPost = (raw) => ({
-  id:           raw.id,
-  posterId:     raw.poster_id,
-  title:        raw.title,
-  foodType:     raw.food_type,
-  tags:         raw.tags ?? [],
-  quantity:     raw.quantity,
-  description:  raw.description,
-  imageUrl:     raw.image_url,
-  lat:          parseFloat(raw.latitude),
-  lng:          parseFloat(raw.longitude),
-  locationName: raw.location_name,
-  status:       raw.status,
-  expiresAt:    raw.expires_at,
-  createdAt:    raw.created_at,
-});
+// ── DB → 前端（含向後相容欄位，讓 PostCard / PostDetailModal 不需改動）─────
+const mapPost = (raw) => {
+  // 從 location_name 反查 locationId（若找不到就 null）
+  const locName = raw.location_name ?? '';
+  const mainLocName = locName.split(' · ')[0];
+  const matchedLoc = LOCATIONS.find(l => l.name === mainLocName);
 
-// ── 前端 (camelCase) → DB (snake_case) for INSERT ───────────────────────────
-const preparePost = (p, userId) => {
-  const prepared = {
-    poster_id:     userId,
-    title:         p.title ?? '未命名食物',
-    food_type:     p.foodType ?? '其他',
-    tags:          p.tags ?? [],
-    quantity:      parseInt(p.quantity) || 1,
-    description:   p.description ?? null,
-    image_url:     p.imageUrl ?? null,
-    latitude:      parseFloat(p.lat)  || 25.0174,
-    longitude:     parseFloat(p.lng)  || 121.5392,
-    location_name: p.locationName ?? null,
-    expires_at:    p.expiresAt ?? new Date(Date.now() + 2 * 3600000).toISOString(),
+  // 發布者名稱：來自 join 的 profiles 或 fallback
+  const posterName = raw.profiles?.display_name ?? '匿名食光人';
+
+  return {
+    // ── 新欄位（Supabase 原生）──
+    id:           raw.id,
+    posterId:     raw.poster_id,
+    title:        raw.title,
+    foodType:     raw.food_type,
+    tags:         raw.tags ?? [],
+    quantity:     raw.quantity,
+    description:  raw.description,
+    imageUrl:     raw.image_url,
+    lat:          parseFloat(raw.latitude),
+    lng:          parseFloat(raw.longitude),
+    locationName: raw.location_name,
+    status:       raw.status,
+    expiresAt:    raw.expires_at,
+    createdAt:    raw.created_at,
+
+    // ── 向後相容欄位（PostCard / PostDetailModal 使用）──
+    locationId:     matchedLoc?.id ?? null,
+    locationDetail: locName.includes(' · ') ? locName.split(' · ')[1] : raw.description,
+    provider:       posterName,
+    pickupTime:     raw.created_at,       // 用建立時間當作開始領取時間
+    expireTime:     raw.expires_at,       // PostCard 用 expireTime
+    unit:           '份',
+    imageColor:     'bg-emerald-100',
   };
-  console.log('[addPost] preparePost output:', prepared);
-  return prepared;
 };
+
+// ── 前端 → DB for INSERT ────────────────────────────────────────────────────
+const preparePost = (p, userId) => ({
+  poster_id:     userId,
+  title:         p.title ?? '未命名食物',
+  food_type:     p.foodType ?? '其他',
+  tags:          p.tags ?? [],
+  quantity:      parseInt(p.quantity) || 1,
+  description:   p.description ?? null,
+  image_url:     p.imageUrl ?? null,
+  latitude:      parseFloat(p.lat)  || 25.0174,
+  longitude:     parseFloat(p.lng)  || 121.5392,
+  location_name: p.locationName ?? null,
+  expires_at:    p.expiresAt ?? new Date(Date.now() + 2 * 3600000).toISOString(),
+});
 
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -49,12 +66,12 @@ export const usePosts = (triggerToast) => {
   useEffect(() => {
     if (!user || !supabase) return;
 
-    // ── 初始載入 ────────────────────────────────────────────────────────────
     const fetchPosts = async () => {
       setIsLoading(true);
+      // JOIN profiles 表取得發布者名稱
       const { data, error } = await supabase
         .from('posts')
-        .select('*')
+        .select('*, profiles!poster_id(display_name)')
         .in('status', ['available', 'reserved'])
         .order('created_at', { ascending: false });
 
@@ -68,7 +85,7 @@ export const usePosts = (triggerToast) => {
 
     fetchPosts();
 
-    // ── Realtime 訂閱（其他使用者新增/更新時自動同步）──────────────────────
+    // Realtime（不含 join，用 fallback 名稱）
     const channel = supabase
       .channel('posts-realtime')
       .on(
@@ -83,7 +100,6 @@ export const usePosts = (triggerToast) => {
           } else if (payload.eventType === 'UPDATE') {
             const updated = mapPost(payload.new);
             setPosts(prev => {
-              // taken / expired → 從列表移除（原本 client-side 10 分鐘清理的替代方案）
               if (['taken', 'expired'].includes(updated.status)) {
                 return prev.filter(p => p.id !== updated.id);
               }
@@ -99,26 +115,21 @@ export const usePosts = (triggerToast) => {
     return () => supabase.removeChannel(channel);
   }, [user]);
 
-  // ── 更新貼文狀態（預訂 / 領取）──────────────────────────────────────────
   const updatePostStatus = async (post, newStatus) => {
     if (!supabase) return false;
     setIsLoading(true);
     try {
-      // 1. 更新 posts 表的狀態
       const { error: postError } = await supabase
         .from('posts')
         .update({ status: newStatus })
         .eq('id', post.id);
-
       if (postError) throw postError;
 
-      // 2. 同步 reservations 交易記錄
       if (newStatus === 'reserved') {
         const { error: resError } = await supabase
           .from('reservations')
           .upsert({ post_id: post.id, reserver_id: user.id, status: 'reserved' });
         if (resError) throw resError;
-
       } else if (newStatus === 'taken') {
         const { error: resError } = await supabase
           .from('reservations')
@@ -138,7 +149,6 @@ export const usePosts = (triggerToast) => {
     }
   };
 
-  // ── 發布新貼文 ───────────────────────────────────────────────────────────
   const addPost = async (newPost) => {
     if (!supabase) return false;
     setIsLoading(true);
@@ -146,9 +156,7 @@ export const usePosts = (triggerToast) => {
       const { error } = await supabase
         .from('posts')
         .insert(preparePost(newPost, user.id));
-
       if (error) throw error;
-      // 不需手動 setPosts：Realtime INSERT 事件會自動同步
       return true;
     } catch (error) {
       console.error('addPost error:', error);
