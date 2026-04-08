@@ -30,7 +30,7 @@ export const useProfile = (triggerToast) => {
 
   // ── 登入後載入 profile ──────────────────────────────────────────────────
   useEffect(() => {
-    if (!user) { setProfileState(null); return; }
+    if (!user || !supabase) { setProfileState(null); return; }
 
     const fetchProfile = async () => {
       const { data, error } = await supabase

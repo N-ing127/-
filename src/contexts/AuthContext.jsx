@@ -8,6 +8,12 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // 如果 Supabase 未設定（缺少 env vars），直接結束 loading
+    if (!supabase) {
+      setLoading(false);
+      return;
+    }
+
     // 1. 取得目前 session（頁面重載後恢復登入狀態）
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -43,12 +49,16 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signUp  = (email, password) =>
-    supabase.auth.signUp({ email, password });
+    supabase?.auth.signUp({ email, password }) ??
+    Promise.resolve({ error: { message: 'Supabase 未設定' } });
 
   const signIn  = (email, password) =>
-    supabase.auth.signInWithPassword({ email, password });
+    supabase?.auth.signInWithPassword({ email, password }) ??
+    Promise.resolve({ error: { message: 'Supabase 未設定' } });
 
-  const signOut = () => supabase.auth.signOut();
+  const signOut = () =>
+    supabase?.auth.signOut() ??
+    Promise.resolve({ error: null });
 
   return (
     <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut }}>

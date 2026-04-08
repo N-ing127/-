@@ -43,7 +43,7 @@ export const usePosts = (triggerToast) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !supabase) return;
 
     // ── 初始載入 ────────────────────────────────────────────────────────────
     const fetchPosts = async () => {
@@ -97,6 +97,7 @@ export const usePosts = (triggerToast) => {
 
   // ── 更新貼文狀態（預訂 / 領取）──────────────────────────────────────────
   const updatePostStatus = async (post, newStatus) => {
+    if (!supabase) return false;
     setIsLoading(true);
     try {
       // 1. 更新 posts 表的狀態
@@ -135,6 +136,7 @@ export const usePosts = (triggerToast) => {
 
   // ── 發布新貼文 ───────────────────────────────────────────────────────────
   const addPost = async (newPost) => {
+    if (!supabase) return false;
     setIsLoading(true);
     try {
       const { error } = await supabase
