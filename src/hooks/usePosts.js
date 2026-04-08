@@ -21,19 +21,23 @@ const mapPost = (raw) => ({
 });
 
 // ── 前端 (camelCase) → DB (snake_case) for INSERT ───────────────────────────
-const preparePost = (p, userId) => ({
-  poster_id:     userId,
-  title:         p.title,
-  food_type:     p.foodType,
-  tags:          p.tags ?? [],
-  quantity:      p.quantity,
-  description:   p.description ?? null,
-  image_url:     p.imageUrl ?? null,
-  latitude:      p.lat,
-  longitude:     p.lng,
-  location_name: p.locationName ?? null,
-  expires_at:    p.expiresAt,
-});
+const preparePost = (p, userId) => {
+  const prepared = {
+    poster_id:     userId,
+    title:         p.title ?? '未命名食物',
+    food_type:     p.foodType ?? '其他',
+    tags:          p.tags ?? [],
+    quantity:      parseInt(p.quantity) || 1,
+    description:   p.description ?? null,
+    image_url:     p.imageUrl ?? null,
+    latitude:      parseFloat(p.lat)  || 25.0174,
+    longitude:     parseFloat(p.lng)  || 121.5392,
+    location_name: p.locationName ?? null,
+    expires_at:    p.expiresAt ?? new Date(Date.now() + 2 * 3600000).toISOString(),
+  };
+  console.log('[addPost] preparePost output:', prepared);
+  return prepared;
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 
