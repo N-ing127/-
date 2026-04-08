@@ -57,7 +57,9 @@ export const useProfile = (triggerToast) => {
         if (newProfile) {
           setProfileState(mapProfile(newProfile));
         } else {
+          // Foreign key 失敗 = auth session 過期/用戶已刪除，強制登出
           console.error('Profile fetch/create failed:', error, insertErr);
+          await supabase.auth.signOut();
         }
       }
     };
