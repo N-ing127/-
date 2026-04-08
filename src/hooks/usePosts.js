@@ -68,6 +68,7 @@ export const usePosts = (triggerToast) => {
       .from('posts')
       .select('*, profiles!poster_id(display_name)')
       .in('status', ['available', 'reserved'])
+      .gt('expires_at', new Date().toISOString())   // 排除已過期
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -90,7 +91,8 @@ export const usePosts = (triggerToast) => {
         (payload) => {
           if (payload.eventType === 'INSERT') {
             const newPost = mapPost(payload.new);
-            if (['available', 'reserved'].includes(newPost.status)) {
+            const notExpired = !newPost.expiresAt || newPost.expiresAt > new Date().toISOString();
+            if (['available', 'reserved'].includes(newPost.status) && notExpired) {
               // 避免與 optimistic insert 重複
               setPosts(prev => {
                 if (prev.some(p => p.id === newPost.id)) return prev;
@@ -121,6 +123,18 @@ export const usePosts = (triggerToast) => {
     channelRef.current = channel;
     return () => supabase.removeChannel(channel);
   }, [user, fetchPosts]);
+
+  // ── 定時清理：移除在瀏覽期間過期的 post（每 30 秒）─────────────────
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date().toISOString();
+      setPosts(prev => {
+        const filtered = prev.filter(p => !p.expiresAt || p.expiresAt > now);
+        return filtered.length === prev.length ? prev : filtered; // 無變動不觸發 re-render
+      });
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
   // ── 頁面可見時靜默 refetch（解決閒置後資料過期問題）──────────────────
   useEffect(() => {
