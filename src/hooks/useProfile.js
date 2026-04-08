@@ -33,13 +33,33 @@ export const useProfile = (triggerToast) => {
     if (!user || !supabase) { setProfileState(null); return; }
 
     const fetchProfile = async () => {
+      // 使用 maybeSingle() 而非 single()，避免 0 行時回傳 406
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (!error && data) setProfileState(mapProfile(data));
+      if (data) {
+        setProfileState(mapProfile(data));
+      } else {
+        // profile 尚未建立（RLS 或時序問題），嘗試自動建立
+        const { data: newProfile, error: insertErr } = await supabase
+          .from('profiles')
+          .insert({
+            id:           user.id,
+            display_name: user.email?.split('@')[0] ?? '食光人',
+            ntu_email:    user.email,
+          })
+          .select()
+          .maybeSingle();
+
+        if (newProfile) {
+          setProfileState(mapProfile(newProfile));
+        } else {
+          console.error('Profile fetch/create failed:', error, insertErr);
+        }
+      }
     };
 
     fetchProfile();
