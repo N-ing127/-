@@ -141,8 +141,8 @@ const HomeView = ({
         </div>
       </div>
 
-      {/* 列表區域 */}
-      <div className="flex-1 px-4 space-y-4 overflow-y-auto">
+      {/* 列表區域（pb-28 為 FloatingNav 預留空間）*/}
+      <div className="flex-1 px-4 space-y-4 overflow-y-auto pb-28">
         <div className="px-1 mt-2 mb-1 flex items-center justify-between">
           <h3 className="text-sm font-black text-gray-400 dark:text-zinc-500 uppercase tracking-widest">
             {filterLoc ? LOCATIONS.find(l=>l.id===filterLoc)?.name : (viewMode === 'near' ? '附近動態' : '最新分享')}

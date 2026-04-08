@@ -98,12 +98,18 @@ export const usePosts = (triggerToast) => {
               });
             }
           } else if (payload.eventType === 'UPDATE') {
-            const updated = mapPost(payload.new);
+            // Realtime payload 不含 JOIN data，需與現有 post 合併
+            const raw = payload.new;
             setPosts(prev => {
-              if (['taken', 'expired'].includes(updated.status)) {
-                return prev.filter(p => p.id !== updated.id);
+              if (['taken', 'expired'].includes(raw.status)) {
+                return prev.filter(p => p.id !== raw.id);
               }
-              return prev.map(p => p.id === updated.id ? updated : p);
+              return prev.map(p => {
+                if (p.id !== raw.id) return p;
+                // 保留現有 provider/profile，僅更新 DB 變動欄位
+                const merged = { ...raw, profiles: { display_name: p.provider } };
+                return mapPost(merged);
+              });
             });
           } else if (payload.eventType === 'DELETE') {
             setPosts(prev => prev.filter(p => p.id !== payload.old.id));
@@ -127,47 +133,63 @@ export const usePosts = (triggerToast) => {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchPosts]);
 
-  // ── Optimistic 更新狀態 ──────────────────────────────────────────────
+  // ── Optimistic 更新狀態（含數量遞減邏輯）────────────────────────────
   const updatePostStatus = useCallback(async (post, newStatus) => {
     if (!supabase) return false;
     setIsMutating(true);
 
-    // 1. Optimistic UI：立即更新列表
-    const snapshot = posts; // 保存快照用於回滾
+    // 領取邏輯：quantity > 1 時遞減，= 1 時才標記 taken
+    const currentQty = parseInt(post.quantity) || 1;
+    const isClaim = newStatus === 'taken';
+    const shouldDecrement = isClaim && currentQty > 1;
+    const effectiveStatus = shouldDecrement ? 'available' : newStatus;
+    const newQty = shouldDecrement ? currentQty - 1 : (isClaim ? 0 : currentQty);
+
+    // 1. 用 functional setState 取得真實快照做 rollback
+    let snapshot = null;
     setPosts(prev => {
-      if (['taken', 'expired'].includes(newStatus)) {
+      snapshot = prev; // 捕獲真實當前狀態
+      if (['taken', 'expired'].includes(effectiveStatus) && !shouldDecrement) {
         return prev.filter(p => p.id !== post.id);
       }
-      return prev.map(p => p.id === post.id ? { ...p, status: newStatus } : p);
+      return prev.map(p =>
+        p.id === post.id
+          ? { ...p, status: effectiveStatus, quantity: newQty }
+          : p
+      );
     });
 
     try {
+      const updatePayload = { status: effectiveStatus };
+      if (isClaim) updatePayload.quantity = newQty;
+
       const { error: postError } = await supabase
         .from('posts')
-        .update({ status: newStatus })
+        .update(updatePayload)
         .eq('id', post.id);
       if (postError) throw postError;
 
       if (newStatus === 'reserved') {
         await supabase.from('reservations')
           .upsert({ post_id: post.id, reserver_id: user.id, status: 'reserved' });
-      } else if (newStatus === 'taken') {
+      } else if (isClaim) {
         await supabase.from('reservations')
-          .update({ status: 'taken', taken_at: new Date().toISOString() })
-          .eq('post_id', post.id)
-          .eq('reserver_id', user.id);
+          .upsert({
+            post_id: post.id, reserver_id: user.id,
+            status: 'taken', taken_at: new Date().toISOString(),
+          });
       }
 
       return true;
     } catch (error) {
       console.error('updatePostStatus error:', error);
-      setPosts(snapshot); // 回滾
+      if (snapshot) setPosts(snapshot); // 用真實快照回滾
       triggerToast('更新失敗，請重試', 'error');
       return false;
     } finally {
       setIsMutating(false);
     }
-  }, [posts, user]);
+  }, [user, triggerToast]);
 
   // ── Optimistic 新增貼文 ──────────────────────────────────────────────
   const addPost = useCallback(async (newPost) => {
