@@ -32,9 +32,9 @@ export default defineConfig({
         ]
       },
       workbox: {
-        // 新 SW 立即接管，不等下次載入
         skipWaiting: true,
         clientsClaim: true,
+        cleanupOutdatedCaches: true,  // 自動清除舊版 precache
         // HTML 走 NetworkFirst：確保永遠拿最新版，離線才用快取
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api/],

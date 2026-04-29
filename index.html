@@ -16,6 +16,39 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- SW 快取核彈：強制清除舊 SW + 舊快取，版號變更時觸發 -->
+    <script>
+      (function() {
+        var SW_VERSION = '2';  // ← 每次需要強制清快取時 +1
+        var KEY = '__tm_sw_v';
+        if (localStorage.getItem(KEY) !== SW_VERSION) {
+          // 1. 清除所有 Cache Storage
+          if ('caches' in window) {
+            caches.keys().then(function(names) {
+              names.forEach(function(name) { caches.delete(name); });
+            });
+          }
+          // 2. 解除所有 Service Worker
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              regs.forEach(function(r) { r.unregister(); });
+            });
+          }
+          localStorage.setItem(KEY, SW_VERSION);
+          // 3. 重新載入拿乾淨版本
+          location.reload();
+          return;
+        }
+        // 非首次：強制觸發 SW 更新檢查（繞過 Chrome 24hr 節流）
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistration().then(function(reg) {
+            if (reg) reg.update();
+          });
+        }
+      })();
+    </script>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
