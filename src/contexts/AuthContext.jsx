@@ -8,64 +8,60 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 如果 Supabase 未設定（缺少 env vars），直接結束 loading
     if (!supabase) {
       setLoading(false);
       return;
     }
 
-    let cancelled = false;
+    let resolved = false;
 
-    // ── Fail-safe：5 秒兜底，防 getSession 因 SW/網路/擴充套件卡 pending ──
+    // 2 秒兜底：onAuthStateChange 的 INITIAL_SESSION 通常 < 100ms 觸發，
+    // 沒觸發代表 supabase client 自己卡死，直接放行。
     const failsafeTimer = setTimeout(() => {
-      if (!cancelled) {
-        console.warn('[Auth] getSession timeout (5s) — 強制放行至登入頁');
+      if (!resolved) {
+        resolved = true;
+        console.warn('[Auth] INITIAL_SESSION timeout — 強制放行');
         setLoading(false);
       }
-    }, 5000);
+    }, 2000);
 
-    // 1. 取得目前 session（頁面重載後恢復登入狀態）
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
-        if (cancelled) return;
-        clearTimeout(failsafeTimer);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        clearTimeout(failsafeTimer);
-        console.error('[Auth] getSession failed:', err);
-        setLoading(false); // 失敗也不能卡死，放行到登入頁
-      });
-
-    // 2. 訂閱 auth 狀態變化
+    // 唯一資料源：onAuthStateChange (INITIAL_SESSION 從 localStorage 讀，不打網路)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
 
-        // 首次註冊時自動建立 profile 記錄
-        if (event === 'SIGNED_IN' && currentUser) {
-          const { data: existing } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('id', currentUser.id)
-            .maybeSingle();
+        // 首次觸發（INITIAL_SESSION）就放行 loading
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(failsafeTimer);
+          setLoading(false);
+        }
 
-          if (!existing) {
-            await supabase.from('profiles').insert({
-              id:           currentUser.id,
-              display_name: currentUser.email.split('@')[0],
-              ntu_email:    currentUser.email,
-            });
+        // 首次註冊時自動建立 profile（fire-and-forget，不卡 UI）
+        if (event === 'SIGNED_IN' && currentUser) {
+          try {
+            const { data: existing } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('id', currentUser.id)
+              .maybeSingle();
+
+            if (!existing) {
+              await supabase.from('profiles').insert({
+                id:           currentUser.id,
+                display_name: currentUser.email.split('@')[0],
+                ntu_email:    currentUser.email,
+              });
+            }
+          } catch (err) {
+            console.error('[Auth] profile bootstrap failed:', err);
           }
         }
       }
     );
 
     return () => {
-      cancelled = true;
       clearTimeout(failsafeTimer);
       subscription.unsubscribe();
     };
