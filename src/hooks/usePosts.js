@@ -83,10 +83,15 @@ export const usePosts = (triggerToast) => {
       // ── 第 1 段：純 posts 查詢 (含 401 自動 refresh + retry) ──
       let { data: postsData, error: postsErr } = await queryPosts();
 
-      // 401 / JWT 過期 → refresh token 後重打一次
+      // 401 / JWT 過期 → refresh token 後重打一次；若仍失敗強制登出
       if (postsErr && (postsErr.code === 'PGRST301' || /jwt|401|expired/i.test(postsErr.message || ''))) {
         console.warn('[usePosts] 401 detected, refreshing token...');
-        await supabase.auth.refreshSession();
+        const { error: refreshErr } = await supabase.auth.refreshSession();
+        if (refreshErr) {
+          console.error('[usePosts] refresh failed → sign out:', refreshErr.message);
+          await supabase.auth.signOut(); // 觸發 onAuthStateChange → user=null → 跳回 LoginView
+          return;
+        }
         ({ data: postsData, error: postsErr } = await queryPosts());
       }
 

@@ -32,18 +32,12 @@ export function AuthProvider({ children }) {
         setUser(currentUser);
 
         // 首次觸發（INITIAL_SESSION）就放行 loading
+        // 不手動 refreshSession：supabase JS client autoRefreshToken=true 會自己處理
+        // （手動 + 自動同時觸發會被「Detect compromised refresh tokens」revoke）
         if (!resolved) {
           resolved = true;
           clearTimeout(failsafeTimer);
           setLoading(false);
-
-          // ── 關鍵：背景強制 refresh token（防 reload 後拿到過期 token 導致 401）──
-          // 不 await：UI 不卡，後續 API 呼叫自然用新 token
-          if (currentUser) {
-            supabase.auth.refreshSession().catch((err) =>
-              console.warn('[Auth] background refresh failed:', err.message)
-            );
-          }
         }
 
         // 首次註冊時自動建立 profile（fire-and-forget，不卡 UI）
