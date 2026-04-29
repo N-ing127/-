@@ -52,14 +52,17 @@ const PostCard = React.memo(({ post, distance, onClick }) => {
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover rounded-l-[24px]"
             onError={(e) => {
-              // 圖片載入失敗時切換到佔位圖（防止 broken image icon）
+              // 圖片載入失敗（HEIC / 403 / 網路）切換到佔位圖
               e.currentTarget.style.display = 'none';
-              e.currentTarget.nextElementSibling?.classList.remove('hidden');
+              const fb = e.currentTarget.parentElement?.querySelector('[data-img-fallback]');
+              if (fb) fb.style.display = 'flex';
             }}
           />
         ) : null}
         <div
-          className={`${post.imageUrl ? 'hidden' : ''} w-full h-full flex items-center justify-center rounded-l-[24px] ${post.imageColor || 'bg-emerald-100'}`}
+          data-img-fallback
+          style={{ display: post.imageUrl ? 'none' : 'flex' }}
+          className={`w-full h-full items-center justify-center rounded-l-[24px] ${post.imageColor || 'bg-emerald-100'}`}
         >
           <Utensils className="w-8 h-8 text-white opacity-50" />
         </div>
