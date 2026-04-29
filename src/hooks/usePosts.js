@@ -61,21 +61,35 @@ export const usePosts = (triggerToast) => {
 
   // ── 載入函式（可靜默呼叫，不觸發全屏 spinner）──────────────────────────
   const fetchPosts = useCallback(async (silent = false) => {
-    if (!user || !supabase) return;
+    // 修 Bug: 沒 user 也要關 spinner，否則初始 isFetching=true 永遠卡住
+    if (!user || !supabase) {
+      setIsFetching(false);
+      return;
+    }
     if (!silent) setIsFetching(true);
 
-    const { data, error } = await supabase
-      .from('posts')
-      .select('*, profiles!poster_id(display_name)')
-      .in('status', ['available', 'reserved'])
-      .gt('expires_at', new Date().toISOString())   // 排除已過期
-      .order('created_at', { ascending: false });
+    try {
+      // 8 秒 timeout 兜底，防 supabase 請求被擴充套件 / 網路卡 pending
+      const queryPromise = supabase
+        .from('posts')
+        .select('*, profiles!poster_id(display_name)')
+        .in('status', ['available', 'reserved'])
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('FETCH_TIMEOUT')), 8000)
+      );
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
 
-    if (!error && data) {
-      setPosts(data.map(mapPost));
+      if (!error && data) setPosts(data.map(mapPost));
+      if (error) console.error('[usePosts] fetch error:', error);
+    } catch (err) {
+      console.error('[usePosts] fetch failed:', err.message);
+      if (!silent && triggerToast) triggerToast('載入失敗，請檢查網路', 'error');
+    } finally {
+      setIsFetching(false);
     }
-    setIsFetching(false);
-  }, [user]);
+  }, [user, triggerToast]);
 
   // ── 初始載入 + Realtime 訂閱 ──────────────────────────────────────────
   useEffect(() => {

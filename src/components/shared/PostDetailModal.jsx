@@ -66,8 +66,23 @@ const PostDetailModal = ({ selectedPost, setSelectedPost, posts, triggerToast, o
         {/* 圖片區域 */}
         <div className="relative h-64 w-full bg-gradient-to-br from-emerald-200 to-teal-300 dark:from-zinc-800 dark:to-zinc-900 overflow-hidden">
           {livePost.imageUrl && (
-            <img src={livePost.imageUrl} alt={livePost.foodType} className="w-full h-full object-cover" />
+            <img
+              src={livePost.imageUrl}
+              alt={livePost.foodType}
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                // 不支援格式 (e.g. .heic) → 切換 placeholder 顯示
+                e.currentTarget.style.display = 'none';
+                const placeholder = e.currentTarget.parentElement?.querySelector('[data-img-fallback]');
+                if (placeholder) placeholder.style.display = 'flex';
+              }}
+            />
           )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none"></div>
+          <div data-img-fallback style={{ display: 'none' }} className="absolute inset-0 items-center justify-center text-white/60">
+            <Utensils className="w-12 h-12 opacity-50" />
+          </div>
           <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
 
           {isExpired && <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white text-2xl font-black">已截止</div>}
