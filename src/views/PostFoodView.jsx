@@ -66,30 +66,40 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
     if (new Date(startTimeStr) >= new Date(expireTimeStr)) { triggerToast('領取時間必須早於截止時間', 'error'); return; }
     if (new Date(expireTimeStr) < new Date()) { triggerToast('截止時間已過', 'error'); return; }
 
-    // ── 上傳圖片到 Supabase Storage ──
     setIsUploading(true);
-    const publicUrl = await uploadFoodImage(imageFile);
-    setIsUploading(false);
+    try {
+      // ── 上傳圖片到 Supabase Storage（加 15 秒 timeout）──
+      const uploadPromise = uploadFoodImage(imageFile);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('TIMEOUT')), 15000)
+      );
+      const publicUrl = await Promise.race([uploadPromise, timeoutPromise]);
 
-    if (!publicUrl) { triggerToast('圖片上傳失敗，請重試', 'error'); return; }
+      if (!publicUrl) { triggerToast('圖片上傳失敗，請重試', 'error'); return; }
 
-    // 從 LOCATIONS 取得座標
-    const selectedLoc = LOCATIONS.find(l => l.id === formData.locationId) || LOCATIONS[0];
+      const selectedLoc = LOCATIONS.find(l => l.id === formData.locationId) || LOCATIONS[0];
 
-    const newPost = {
-      title: `${formData.foodType} ${formData.quantity}${formData.unit}`,
-      foodType: formData.foodType,
-      tags: formData.tags,
-      quantity: parseInt(formData.quantity),
-      description: formData.locationDetail,
-      imageUrl: publicUrl,
-      lat: selectedLoc.lat,
-      lng: selectedLoc.lng,
-      locationName: `${selectedLoc.name} · ${formData.locationDetail}`,
-      expiresAt: new Date(expireTimeStr).toISOString(),
-    };
+      const newPost = {
+        title: `${formData.foodType} ${formData.quantity}${formData.unit}`,
+        foodType: formData.foodType,
+        tags: formData.tags,
+        quantity: parseInt(formData.quantity),
+        description: formData.locationDetail,
+        imageUrl: publicUrl,
+        lat: selectedLoc.lat,
+        lng: selectedLoc.lng,
+        locationName: `${selectedLoc.name} · ${formData.locationDetail}`,
+        expiresAt: new Date(expireTimeStr).toISOString(),
+      };
 
-    onCreatePost(newPost);
+      await onCreatePost(newPost);
+    } catch (err) {
+      console.error('handleSubmit error:', err);
+      const msg = err.message === 'TIMEOUT' ? '上傳逾時，請檢查網路後重試' : '發布失敗，請重試';
+      triggerToast(msg, 'error');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
