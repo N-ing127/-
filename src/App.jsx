@@ -66,7 +66,10 @@ export default function AppRoot() {
 
 function TimeMachineApp() {
   const [activeTab, setActiveTab] = useState('home');
-  const [isDark, setIsDark] = useState(localStorage.getItem('theme') === 'dark');
+  // localStorage 在 Safari Private / Brave 嚴格模式可能 throw，必須兜底
+  const [isDark, setIsDark] = useState(() => {
+    try { return localStorage.getItem('theme') === 'dark'; } catch { return false; }
+  });
   const [showToast, setShowToast] = useState(null);
   const [selectedPost, setSelectedPost] = useState(null); 
   const [unlockedAchievement, setUnlockedAchievement] = useState(null);
@@ -81,13 +84,8 @@ function TimeMachineApp() {
   const [showShareModal, setShowShareModal] = useState(false);
 
   useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
+    document.documentElement.classList.toggle('dark', isDark);
+    try { localStorage.setItem('theme', isDark ? 'dark' : 'light'); } catch {}
   }, [isDark]);
 
   const triggerToast = useCallback((msg, type = 'success') => {

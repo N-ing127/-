@@ -28,10 +28,26 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
+    if (!file) return;
+
+    // ── 客戶端守門：HEIC/未知格式 直接擋下，避免上傳後 render 失敗 ──
+    const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!ACCEPTED.includes((file.type || '').toLowerCase())) {
+      triggerToast('不支援的格式（iPhone 請設定→相機→格式→相容性最佳）', 'error');
+      e.target.value = ''; // 清掉 input，允許再次選同一檔
+      return;
     }
+    if (file.size > 5 * 1024 * 1024) {
+      triggerToast('檔案過大（> 5MB），請壓縮後再傳', 'error');
+      e.target.value = '';
+      return;
+    }
+
+    // 釋放舊的 blob URL，避免記憶體洩漏
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
   };
 
   const clearImage = () => {
@@ -68,28 +84,45 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
 
     setIsUploading(true);
     try {
-      // ── 上傳圖片到 Supabase Storage（加 15 秒 timeout）──
+      // ── 上傳圖片到 Supabase Storage（15 秒 timeout）──
       const uploadPromise = uploadFoodImage(imageFile);
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('TIMEOUT')), 15000)
       );
-      const publicUrl = await Promise.race([uploadPromise, timeoutPromise]);
+      const result = await Promise.race([uploadPromise, timeoutPromise]);
+      const { url: publicUrl, error: uploadError } = result;
 
-      if (!publicUrl) { triggerToast('圖片上傳失敗，請重試', 'error'); return; }
+      if (!publicUrl) {
+        triggerToast(uploadError || '圖片上傳失敗，請重試', 'error');
+        return;
+      }
+
+      // ── Render 健檢：上傳完先嘗試載入一次，失敗就不送出 post ──
+      const ok = await new Promise((resolve) => {
+        const img = new Image();
+        img.onload  = () => resolve(true);
+        img.onerror = () => resolve(false);
+        img.src = publicUrl;
+        // 8 秒兜底（CDN 可能還沒 propagate）
+        setTimeout(() => resolve(false), 8000);
+      });
+      if (!ok) {
+        triggerToast('圖片無法顯示（請檢查 Storage bucket 是否為 public）', 'error');
+        return;
+      }
 
       const selectedLoc = LOCATIONS.find(l => l.id === formData.locationId) || LOCATIONS[0];
-
       const newPost = {
-        title: `${formData.foodType} ${formData.quantity}${formData.unit}`,
-        foodType: formData.foodType,
-        tags: formData.tags,
-        quantity: parseInt(formData.quantity),
-        description: formData.locationDetail,
-        imageUrl: publicUrl,
-        lat: selectedLoc.lat,
-        lng: selectedLoc.lng,
+        title:        `${formData.foodType} ${formData.quantity}${formData.unit}`,
+        foodType:     formData.foodType,
+        tags:         formData.tags,
+        quantity:     parseInt(formData.quantity),
+        description:  formData.locationDetail,
+        imageUrl:     publicUrl,
+        lat:          selectedLoc.lat,
+        lng:          selectedLoc.lng,
         locationName: `${selectedLoc.name} · ${formData.locationDetail}`,
-        expiresAt: new Date(expireTimeStr).toISOString(),
+        expiresAt:    new Date(expireTimeStr).toISOString(),
       };
 
       await onCreatePost(newPost);
@@ -141,8 +174,9 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
                     <Camera className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
                   </div>
                   <span className="text-gray-500 dark:text-zinc-500 font-bold text-sm">點擊或拖放照片</span>
-                  <p className="text-[10px] text-gray-400 dark:text-zinc-600 mt-1 uppercase tracking-widest">JPG, PNG up to 5MB</p>
-                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                  <p className="text-[10px] text-gray-400 dark:text-zinc-600 mt-1 uppercase tracking-widest">JPG · PNG · WEBP up to 5MB</p>
+                  {/* accept 只列瀏覽器可顯示格式（避免 iOS 預設 HEIC） */}
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleImageUpload} className="hidden" />
                 </label>
               )}
             </div>
@@ -243,7 +277,7 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
                 className={`${formInputStyle} flex-1`} 
                 value={customTagInput} 
                 onChange={e => setCustomTagInput(e.target.value)} 
-                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomTag())} 
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomTag(); } }}
               />
               <button 
                 type="button" 

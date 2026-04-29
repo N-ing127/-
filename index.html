@@ -19,17 +19,18 @@
   <body>
     <div id="root"></div>
 
-    <!-- 用自毀 SW 替換舊 SW + 清除所有快取 -->
+    <!-- 一次性清除遺留的 SW + Cache（不再註冊任何 SW） -->
     <script>
-      (function() {
+      (function () {
         if ('serviceWorker' in navigator) {
-          // 註冊自毀 SW，覆蓋舊的 VitePWA SW（同 URL scope）
-          navigator.serviceWorker.register('/sw.js').catch(function() {});
+          navigator.serviceWorker.getRegistrations()
+            .then(function (regs) { regs.forEach(function (r) { r.unregister(); }); })
+            .catch(function () {});
         }
         if ('caches' in window) {
-          caches.keys().then(function(names) {
-            names.forEach(function(name) { caches.delete(name); });
-          });
+          caches.keys()
+            .then(function (names) { names.forEach(function (n) { caches.delete(n); }); })
+            .catch(function () {});
         }
       })();
     </script>

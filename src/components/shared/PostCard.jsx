@@ -42,16 +42,27 @@ const PostCard = React.memo(({ post, distance, onClick }) => {
       )}
 
       {/* 圖片區域 */}
-      <div className="w-1/3 relative bg-gray-100 rounded-l-[24px]">
+      <div className="w-1/3 relative bg-gray-100 rounded-l-[24px] overflow-hidden">
         {post.imageUrl ? (
-          /* 修正 2: 圖片手動加上左側圓角 */
-          <img src={post.imageUrl} alt="food" className="w-full h-full object-cover rounded-l-[24px]" />
-        ) : (
-          /* 修正 3: 佔位圖也加上左側圓角 */
-          <div className={`w-full h-full flex items-center justify-center rounded-l-[24px] ${post.imageColor}`}>
-            <Utensils className="w-8 h-8 text-white opacity-50" />
-          </div>
-        )}
+          <img
+            src={post.imageUrl}
+            alt="food"
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            className="w-full h-full object-cover rounded-l-[24px]"
+            onError={(e) => {
+              // 圖片載入失敗時切換到佔位圖（防止 broken image icon）
+              e.currentTarget.style.display = 'none';
+              e.currentTarget.nextElementSibling?.classList.remove('hidden');
+            }}
+          />
+        ) : null}
+        <div
+          className={`${post.imageUrl ? 'hidden' : ''} w-full h-full flex items-center justify-center rounded-l-[24px] ${post.imageColor || 'bg-emerald-100'}`}
+        >
+          <Utensils className="w-8 h-8 text-white opacity-50" />
+        </div>
         
         {/* 左上：距離標籤 (包含 Glass Popover 互動) */}
         <div 
