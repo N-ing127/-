@@ -61,30 +61,62 @@ export const usePosts = (triggerToast) => {
 
   // ── 載入函式（可靜默呼叫，不觸發全屏 spinner）──────────────────────────
   const fetchPosts = useCallback(async (silent = false) => {
-    // 修 Bug: 沒 user 也要關 spinner，否則初始 isFetching=true 永遠卡住
     if (!user || !supabase) {
       setIsFetching(false);
       return;
     }
     if (!silent) setIsFetching(true);
 
-    try {
-      // 8 秒 timeout 兜底，防 supabase 請求被擴充套件 / 網路卡 pending
-      const queryPromise = supabase
+    // 內部函式：執行 posts 查詢，401 自動 refresh + retry 一次
+    const queryPosts = async () => {
+      const res = await supabase
         .from('posts')
-        .select('*, profiles!poster_id(display_name)')
+        .select('*')
         .in('status', ['available', 'reserved'])
         .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('FETCH_TIMEOUT')), 8000)
-      );
-      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+        .order('created_at', { ascending: false })
+        .limit(100);
+      return res;
+    };
 
-      if (!error && data) setPosts(data.map(mapPost));
-      if (error) console.error('[usePosts] fetch error:', error);
+    try {
+      // ── 第 1 段：純 posts 查詢 (含 401 自動 refresh + retry) ──
+      let { data: postsData, error: postsErr } = await queryPosts();
+
+      // 401 / JWT 過期 → refresh token 後重打一次
+      if (postsErr && (postsErr.code === 'PGRST301' || /jwt|401|expired/i.test(postsErr.message || ''))) {
+        console.warn('[usePosts] 401 detected, refreshing token...');
+        await supabase.auth.refreshSession();
+        ({ data: postsData, error: postsErr } = await queryPosts());
+      }
+
+      if (postsErr) throw postsErr;
+      if (!postsData || postsData.length === 0) {
+        setPosts([]);
+        return;
+      }
+
+      // ── 第 2 段：批量取 poster display_name（in-list 查詢，比 JOIN 快）──
+      const posterIds = [...new Set(postsData.map(p => p.poster_id).filter(Boolean))];
+      let profileMap = {};
+      if (posterIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, display_name')
+          .in('id', posterIds);
+        if (profiles) {
+          profileMap = Object.fromEntries(profiles.map(p => [p.id, p.display_name]));
+        }
+      }
+
+      // ── 客戶端 join → mapPost 結構保持相容 ──
+      const merged = postsData.map(p => ({
+        ...p,
+        profiles: { display_name: profileMap[p.poster_id] ?? '匿名食光人' },
+      }));
+      setPosts(merged.map(mapPost));
     } catch (err) {
-      console.error('[usePosts] fetch failed:', err.message);
+      console.error('[usePosts] fetch failed:', err?.message || err);
       if (!silent && triggerToast) triggerToast('載入失敗，請檢查網路', 'error');
     } finally {
       setIsFetching(false);
