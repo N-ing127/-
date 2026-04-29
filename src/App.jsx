@@ -20,7 +20,7 @@ import FloatingNav from './components/shared/FloatingNav';
 import PostDetailModal from './components/shared/PostDetailModal';
 import FilterModal from './components/shared/FilterModal';
 import SharePostModal from './components/shared/SharePostModal';
-import { SWUpdateToast } from './components/shared/SWUpdateToast';
+// PWA SW 已停用，SWUpdateToast 移除
 
 const AchievementModal = ({ achievement, onClose }) => {
   if (!achievement) return null;
@@ -169,7 +169,7 @@ function TimeMachineApp() {
 
   return (
     <div className="flex flex-col h-screen max-w-md mx-auto bg-stone-50 dark:bg-zinc-950 shadow-2xl overflow-hidden font-sans text-gray-800 dark:text-zinc-100 relative transition-colors">
-      <SWUpdateToast />
+      {/* PWA SW 已停用 */}
       <main className="flex-1 overflow-hidden relative z-0">
         {/* 僅首次載入顯示 overlay，靜默 refetch 不會觸發 */}
         {isFetching && activeTab === 'home' && (

@@ -4,46 +4,31 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    
+
     <meta name="theme-color" content="#10b981" />
     <meta name="description" content="台大校園剩食分享平台" />
-    
+
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />
-    
+    <link rel="manifest" href="/manifest.json" />
+
     <title>食光機 TimeMachine</title>
   </head>
   <body>
     <div id="root"></div>
 
-    <!-- SW 快取核彈：強制清除舊 SW + 舊快取，版號變更時觸發 -->
+    <!-- 清除所有舊 Service Worker 和快取 -->
     <script>
       (function() {
-        var SW_VERSION = '2';  // ← 每次需要強制清快取時 +1
-        var KEY = '__tm_sw_v';
-        if (localStorage.getItem(KEY) !== SW_VERSION) {
-          // 1. 清除所有 Cache Storage
-          if ('caches' in window) {
-            caches.keys().then(function(names) {
-              names.forEach(function(name) { caches.delete(name); });
-            });
-          }
-          // 2. 解除所有 Service Worker
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(regs) {
-              regs.forEach(function(r) { r.unregister(); });
-            });
-          }
-          localStorage.setItem(KEY, SW_VERSION);
-          // 3. 重新載入拿乾淨版本
-          location.reload();
-          return;
-        }
-        // 非首次：強制觸發 SW 更新檢查（繞過 Chrome 24hr 節流）
         if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistration().then(function(reg) {
-            if (reg) reg.update();
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            regs.forEach(function(r) { r.unregister(); });
+          });
+        }
+        if ('caches' in window) {
+          caches.keys().then(function(names) {
+            names.forEach(function(name) { caches.delete(name); });
           });
         }
       })();
