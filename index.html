@@ -18,13 +18,12 @@
   <body>
     <div id="root"></div>
 
-    <!-- 清除所有舊 Service Worker 和快取 -->
+    <!-- 用自毀 SW 替換舊 SW + 清除所有快取 -->
     <script>
       (function() {
         if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            regs.forEach(function(r) { r.unregister(); });
-          });
+          // 註冊自毀 SW，覆蓋舊的 VitePWA SW（同 URL scope）
+          navigator.serviceWorker.register('/sw.js').catch(function() {});
         }
         if ('caches' in window) {
           caches.keys().then(function(names) {
