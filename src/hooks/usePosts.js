@@ -61,22 +61,13 @@ export const usePosts = (triggerToast) => {
 
   // ── 載入函式（可靜默呼叫，不觸發全屏 spinner）──────────────────────────
   const fetchPosts = useCallback(async (silent = false) => {
+    console.log('[usePosts] fetchPosts called, user:', user?.id, 'silent:', silent);
     if (!user || !supabase) {
+      console.log('[usePosts] early return: no user/supabase');
       setIsFetching(false);
       return;
     }
     if (!silent) setIsFetching(true);
-
-    // ── 等 supabase client 真正 ready (session loaded into client) ──
-    // 解 reload 時的 race：onAuthStateChange/INITIAL_SESSION fire 後仍可能
-    //   發出 fetch 太快，client 還沒把 token 注入到 PostgrestClient header。
-    // 主動 await getSession() 確保下一個 query 帶有正確 apikey + Authorization。
-    try {
-      await supabase.auth.getSession();
-    } catch (e) {
-      // getSession 失敗不致命，繼續嘗試 query
-      console.warn('[usePosts] getSession warmup warning:', e?.message);
-    }
 
     const queryPosts = async () => supabase
       .from('posts')
@@ -87,7 +78,9 @@ export const usePosts = (triggerToast) => {
       .limit(100);
 
     try {
+      console.log('[usePosts] firing query...');
       let { data: postsData, error: postsErr } = await queryPosts();
+      console.log('[usePosts] query result:', { count: postsData?.length, error: postsErr });
 
       // 401 / JWT 過期 → refresh token 後重打一次；若仍失敗強制登出
       if (postsErr && (postsErr.code === 'PGRST301' || /jwt|401|expired|api ?key/i.test(postsErr.message || ''))) {

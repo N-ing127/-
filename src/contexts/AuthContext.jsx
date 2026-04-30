@@ -28,6 +28,7 @@ export function AuthProvider({ children }) {
     // 唯一資料源：onAuthStateChange (INITIAL_SESSION 從 localStorage 讀，不打網路)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('[Auth] state change:', event, 'user:', session?.user?.id);
         const currentUser = session?.user ?? null;
         setUser(currentUser);
 
