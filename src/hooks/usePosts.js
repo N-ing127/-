@@ -67,29 +67,35 @@ export const usePosts = (triggerToast) => {
     }
     if (!silent) setIsFetching(true);
 
-    // 內部函式：執行 posts 查詢，401 自動 refresh + retry 一次
-    const queryPosts = async () => {
-      const res = await supabase
-        .from('posts')
-        .select('*')
-        .in('status', ['available', 'reserved'])
-        .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(100);
-      return res;
-    };
+    // ── 等 supabase client 真正 ready (session loaded into client) ──
+    // 解 reload 時的 race：onAuthStateChange/INITIAL_SESSION fire 後仍可能
+    //   發出 fetch 太快，client 還沒把 token 注入到 PostgrestClient header。
+    // 主動 await getSession() 確保下一個 query 帶有正確 apikey + Authorization。
+    try {
+      await supabase.auth.getSession();
+    } catch (e) {
+      // getSession 失敗不致命，繼續嘗試 query
+      console.warn('[usePosts] getSession warmup warning:', e?.message);
+    }
+
+    const queryPosts = async () => supabase
+      .from('posts')
+      .select('*')
+      .in('status', ['available', 'reserved'])
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(100);
 
     try {
-      // ── 第 1 段：純 posts 查詢 (含 401 自動 refresh + retry) ──
       let { data: postsData, error: postsErr } = await queryPosts();
 
       // 401 / JWT 過期 → refresh token 後重打一次；若仍失敗強制登出
-      if (postsErr && (postsErr.code === 'PGRST301' || /jwt|401|expired/i.test(postsErr.message || ''))) {
-        console.warn('[usePosts] 401 detected, refreshing token...');
+      if (postsErr && (postsErr.code === 'PGRST301' || /jwt|401|expired|api ?key/i.test(postsErr.message || ''))) {
+        console.warn('[usePosts] auth error, refreshing:', postsErr.message);
         const { error: refreshErr } = await supabase.auth.refreshSession();
         if (refreshErr) {
           console.error('[usePosts] refresh failed → sign out:', refreshErr.message);
-          await supabase.auth.signOut(); // 觸發 onAuthStateChange → user=null → 跳回 LoginView
+          await supabase.auth.signOut();
           return;
         }
         ({ data: postsData, error: postsErr } = await queryPosts());

@@ -34,14 +34,6 @@ export const supabase = supabaseUrl && supabaseKey
         autoRefreshToken:   true,
         detectSessionInUrl: true,
       },
-      // 明確較短超時（global fetch wrapper），避免請求無限掛起
-      global: {
-        fetch: (input, init = {}) => {
-          const controller = new AbortController();
-          const timeout = setTimeout(() => controller.abort(), 10_000); // 10s
-          return fetch(input, { ...init, signal: controller.signal })
-            .finally(() => clearTimeout(timeout));
-        },
-      },
+      // 不再 wrap global fetch — AbortController 會干擾 supabase 內部 retry 邏輯
     })
   : null;
