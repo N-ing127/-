@@ -26,6 +26,11 @@ const safeStorage = {
   },
 };
 
+// Supabase 內部 navigator.locks 會在 Chrome reload 時 zombie lock 死鎖
+// 用 no-op lock 取代 → 不做跨分頁同步，但能避免死鎖
+// (單頁 SPA 沒有跨分頁需求，安全停用)
+const noopLock = async (_name, _acquireTimeout, fn) => fn();
+
 export const supabase = supabaseUrl && supabaseKey
   ? createClient(supabaseUrl, supabaseKey, {
       auth: {
@@ -33,7 +38,7 @@ export const supabase = supabaseUrl && supabaseKey
         persistSession:     true,
         autoRefreshToken:   true,
         detectSessionInUrl: true,
+        lock:               noopLock,
       },
-      // 不再 wrap global fetch — AbortController 會干擾 supabase 內部 retry 邏輯
     })
   : null;
