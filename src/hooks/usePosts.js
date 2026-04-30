@@ -61,9 +61,7 @@ export const usePosts = (triggerToast) => {
 
   // ── 載入函式（可靜默呼叫，不觸發全屏 spinner）──────────────────────────
   const fetchPosts = useCallback(async (silent = false) => {
-    console.log('[usePosts] fetchPosts called, user:', user?.id, 'silent:', silent);
     if (!user || !supabase) {
-      console.log('[usePosts] early return: no user/supabase');
       setIsFetching(false);
       return;
     }
@@ -78,9 +76,7 @@ export const usePosts = (triggerToast) => {
       .limit(100);
 
     try {
-      console.log('[usePosts] firing query...');
       let { data: postsData, error: postsErr } = await queryPosts();
-      console.log('[usePosts] query result:', { count: postsData?.length, error: postsErr });
 
       // 401 / JWT 過期 → refresh token 後重打一次；若仍失敗強制登出
       if (postsErr && (postsErr.code === 'PGRST301' || /jwt|401|expired|api ?key/i.test(postsErr.message || ''))) {
