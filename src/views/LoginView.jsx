@@ -79,12 +79,33 @@ export default function LoginView() {
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('type') === 'recovery') {
+      const hash = (window.location.hash || '').replace(/^#/, '');
+      const hashParams = new URLSearchParams(hash);
+
+      // 錯誤處理（例如 otp_expired）
+      const error = hashParams.get('error') || params.get('error');
+      const errorDesc = hashParams.get('error_description') || params.get('error_description');
+      if (error) {
+        const friendly = error === 'access_denied' && /otp_expired/i.test(errorDesc || '')
+          ? '重設連結已過期，請重新申請重設密碼' : decodeURIComponent(errorDesc || error);
+        setError(friendly);
+        // 清掉 URL 的 hash/search
+        const u = new URL(window.location.href);
+        u.search = '';
+        u.hash = '';
+        window.history.replaceState({}, document.title, u.toString());
+        return;
+      }
+
+      // 若 redirect 含 type=recovery 或有 access_token，切換到 recover 模式
+      const isRecovery = params.get('type') === 'recovery' || hashParams.get('type') === 'recovery' || !!hashParams.get('access_token');
+      if (isRecovery) {
         setMode('recover');
-        // 清掉 query 參數避免重複處理
-        const url = new URL(window.location.href);
-        url.search = '';
-        window.history.replaceState({}, document.title, url.toString());
+        // 清掉 URL 的 hash/search，避免重複處理
+        const u = new URL(window.location.href);
+        u.search = '';
+        u.hash = '';
+        window.history.replaceState({}, document.title, u.toString());
       }
     } catch (e) {}
   }, []);
@@ -135,7 +156,7 @@ export default function LoginView() {
             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="email"
-              placeholder={mode === 'reset' ? '註冊信箱' : (mode === 'signup' ? 'NTU信箱（必須）' : '您註冊的NTU信箱')}
+              placeholder={mode === 'reset' ? '您註冊的NTU信箱' : (mode === 'signup' ? 'NTU信箱（必須）' : 'NTU信箱')}
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
