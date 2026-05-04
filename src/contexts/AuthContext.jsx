@@ -81,8 +81,14 @@ export function AuthProvider({ children }) {
     supabase?.auth.signOut() ??
     Promise.resolve({ error: null });
 
+  const resetPassword = (email) =>
+    supabase?.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}`
+    }) ??
+    Promise.resolve({ error: { message: 'Supabase 未設定' } });
+
   return (
-    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut, resetPassword }}>
       {children}
     </AuthContext.Provider>
   );
