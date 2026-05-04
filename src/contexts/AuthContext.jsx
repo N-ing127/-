@@ -87,8 +87,13 @@ export function AuthProvider({ children }) {
     }) ??
     Promise.resolve({ error: { message: 'Supabase 未設定' } });
 
+  // 更新使用者密碼（需要已存在的 session / recovery session）
+  const updateUser = (options) =>
+    supabase?.auth.updateUser(options) ??
+    Promise.resolve({ error: { message: 'Supabase 未設定' } });
+
   return (
-    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut, resetPassword }}>
+    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut, resetPassword, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

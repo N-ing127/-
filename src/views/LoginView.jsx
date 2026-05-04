@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Leaf, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function LoginView() {
-  const { signIn, signUp, resetPassword } = useAuth();
+  const { signIn, signUp, resetPassword, updateUser, signOut } = useAuth();
 
   const [mode, setMode]           = useState('login'); // 'login' | 'signup' | 'reset'
   const [email, setEmail]         = useState('');
   const [password, setPassword]   = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPw, setShowPw]       = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError]         = useState('');
@@ -42,6 +43,24 @@ export default function LoginView() {
         if (error) throw error;
         setSuccess('密碼重設信已寄出，請檢查信箱並按照指示重新設置密碼！');
         setEmail('');
+      } else if (mode === 'recover') {
+        // 確認兩次密碼一致
+        if (!password || password.length < 6) {
+          setError('密碼至少需 6 個字元');
+          setIsLoading(false);
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('兩次密碼不一致');
+          setIsLoading(false);
+          return;
+        }
+        const { error } = await updateUser({ password });
+        if (error) throw error;
+        // 為安全起見，更新完密碼後先登出，並導回登入畫面
+        await signOut();
+        setSuccess('密碼已更新，請使用新密碼登入');
+        setMode('login');
       }
     } catch (err) {
       const messages = {
@@ -55,6 +74,20 @@ export default function LoginView() {
       setIsLoading(false);
     }
   };
+
+  // 偵測 Supabase recovery redirect（type=recovery）自動切換到輸入新密碼模式
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('type') === 'recovery') {
+        setMode('recover');
+        // 清掉 query 參數避免重複處理
+        const url = new URL(window.location.href);
+        url.search = '';
+        window.history.replaceState({}, document.title, url.toString());
+      }
+    } catch (e) {}
+  }, []);
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-stone-50 dark:bg-zinc-950 px-6">
@@ -102,7 +135,7 @@ export default function LoginView() {
             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="email"
-              placeholder={mode === 'reset' ? '註冊信箱' : '電子信箱'}
+              placeholder={mode === 'reset' ? '註冊信箱' : (mode === 'signup' ? 'NTU信箱（必須）' : '您註冊的NTU信箱')}
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
@@ -111,8 +144,8 @@ export default function LoginView() {
             />
           </div>
 
-          {/* Password - 只在 login 和 signup 顯示 */}
-          {mode !== 'reset' && (
+          {/* Password - 在 login/signup/recover 顯示 */}
+          {(mode !== 'reset') && (
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -131,6 +164,22 @@ export default function LoginView() {
               >
                 {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
+            </div>
+          )}
+
+          {/* 確認密碼 - 只在 recover 模式顯示 */}
+          {mode === 'recover' && (
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type={showPw ? 'text' : 'password'}
+                placeholder="再次輸入新密碼"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                required
+                minLength={6}
+                className="w-full pl-11 pr-12 py-3.5 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-2xl text-sm text-gray-800 dark:text-zinc-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"
+              />
             </div>
           )}
 
