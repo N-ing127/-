@@ -14,14 +14,31 @@ const PostDetailModal = ({
   tokens = 0, stakedPostIds = new Set(), revealedCoords = {}, heatmapCounts = {},
   isStaking = false, onStake,
 }) => {
+  // ⚠️ 所有 hooks 必須在 early return 之前，遵守 Rules of Hooks
   const [claimQty, setClaimQty] = useState(1);
+  const [showCamera, setShowCamera] = useState(false);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const { user } = useAuth();
 
-  // 從最新 posts 取得即時數據（selectedPost 可能是 stale snapshot）
+  // 從最新 posts 取得即時數據
   const livePost = useMemo(() => {
     if (!selectedPost) return null;
     return posts?.find(p => p.id === selectedPost.id) ?? selectedPost;
   }, [selectedPost, posts]);
 
+  // ── Phase 1/2 衍生狀態（先計算，後面 useGeofence 要用 target）──
+  const isStakedByMe = livePost ? stakedPostIds.has(livePost.id) : false;
+  const heatmapCount = livePost ? (heatmapCounts[livePost.id] ?? 0) : 0;
+  const preciseLoc = livePost ? (revealedCoords[livePost.id] ?? null) : null;
+
+  // useGeofence target — 必須無條件呼叫此 hook，內部已處理 null
+  const geoTarget = useMemo(() => {
+    if (!livePost || !isStakedByMe) return null;
+    return preciseLoc || (livePost.lat && livePost.lng ? { lat: livePost.lat, lng: livePost.lng } : null);
+  }, [livePost, isStakedByMe, preciseLoc]);
+  const { distanceM, isInside, error: geoError, currentCoords } = useGeofence(geoTarget, 50);
+
+  // 早退一定要在所有 hooks 之後
   if (!livePost) return null;
 
   const location = LOCATIONS.find(loc => loc.id === livePost.locationId);
@@ -51,22 +68,6 @@ const PostDetailModal = ({
   const isExpired = timeLeft <= 0;
   const isTaken = livePost.status === 'taken' || currentQty <= 0;
   const isAvailable = !isExpired && !isTaken;
-
-  const { user } = useAuth();
-  // ── Phase 1: 質押狀態 ──
-  const isStakedByMe = stakedPostIds.has(livePost.id);
-  const heatmapCount = heatmapCounts[livePost.id] ?? 0;
-  const preciseLoc = revealedCoords[livePost.id] ?? null;
-
-  // ── Phase 2: Geofence 監聽（只有質押後才啟動，避免無謂耗電）──
-  const target = isStakedByMe
-    ? (preciseLoc || (livePost.lat && livePost.lng ? { lat: livePost.lat, lng: livePost.lng } : null))
-    : null;
-  const { distanceM, isInside, error: geoError, currentCoords } = useGeofence(target, 50);
-
-  // ── Phase 2: 拍照流程 state ──
-  const [showCamera, setShowCamera] = useState(false);
-  const [isUploadingProof, setIsUploadingProof] = useState(false);
 
   const maxClaim = currentQty;
   const safeClaimQty = Math.min(claimQty, maxClaim);
