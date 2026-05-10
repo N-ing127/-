@@ -8,6 +8,7 @@ import { usePosts } from './hooks/usePosts';
 import { useProfile } from './hooks/useProfile';
 import { useTokens } from './hooks/useTokens';
 import { useHeatmap } from './hooks/useHeatmap';
+import { useSettlements } from './hooks/useSettlements';
 
 // Views
 import HomeView from './views/HomeView';
@@ -99,6 +100,9 @@ function TimeMachineApp() {
   const { profile, setProfile, updateStats } = useProfile(triggerToast);
   const { tokens, stakedPostIds, revealedCoords, isStaking, stakeToken } = useTokens(triggerToast);
   const heatmapCounts = useHeatmap(posts.map(p => p.id));
+  const settlements = useSettlements();
+  // 找正在 escrow 的 settlement (顯示主頁倒數 banner)
+  const activeSettlement = settlements.find(s => s.isInWindow) || null;
 
   // 預設 profile，避免 null 時整棵 component tree 被銷毀
   const safeProfile = profile ?? {
@@ -130,9 +134,10 @@ function TimeMachineApp() {
     }
   };
 
-  const handlePostClaim = async (post, qty = 1) => {
-    const success = await claimPost(post, qty);
-    if (success) {
+  // Phase 2: claimPost 簽名變 (post, qty, proof)，proof = { url, lat, lng }
+  const handlePostClaim = async (post, qty = 1, proof = null) => {
+    const result = await claimPost(post, qty, proof);
+    if (result?.success) {
       const xpGain = 50 * qty;
       const weightGain = parseFloat((0.4 * qty).toFixed(1));
       const isNight = new Date().getHours() >= 22;
@@ -147,14 +152,15 @@ function TimeMachineApp() {
       if (newAch) {
         setUnlockedAchievement(newAch);
       } else {
-        triggerToast(`領取成功！ +${xpGain} XP`, 'success');
+        triggerToast(`領取成功！ +${xpGain} XP，結算中 15 分鐘`, 'success');
       }
-      // 領完才關 modal，數量遞減時保持開啟讓用戶看到更新
       const livePost = posts.find(p => p.id === post.id);
       if (!livePost || livePost.quantity <= 0) {
         setSelectedPost(null);
       }
+      return true;
     }
+    return false;
   };
 
   const handleCreatePost = async (newPost) => {
@@ -190,6 +196,7 @@ function TimeMachineApp() {
             onPostReserve={handlePostReserve} showNearbyAlert={safeProfile.settings?.showNearbyAlert}
             tokens={tokens} stakedPostIds={stakedPostIds} revealedCoords={revealedCoords}
             heatmapCounts={heatmapCounts}
+            activeSettlement={activeSettlement}
           />
         )}
 

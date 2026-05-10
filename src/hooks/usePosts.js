@@ -197,16 +197,21 @@ export const usePosts = (triggerToast) => {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchPosts]);
 
-  // ── 領取惜食（透過 RPC 原子操作，防 race condition）────────────────
-  const claimPost = useCallback(async (post, claimQty = 1) => {
+  // ── 領取惜食 v2（Geofence + Photo + 15min Escrow）─────────────────
+  // proof: { url, lat, lng } — 由 PostDetailModal 透過 ClaimProofCamera + uploadClaimProof 提供
+  const claimPost = useCallback(async (post, claimQty = 1, proof = null) => {
     if (!supabase || !user) return false;
+    if (!proof?.url || proof.lat == null || proof.lng == null) {
+      triggerToast?.('領取需附證明照片與定位', 'error');
+      return false;
+    }
     setIsMutating(true);
 
     const currentQty = parseInt(post.quantity) || 1;
     const newQty = Math.max(0, currentQty - claimQty);
     const willBeGone = newQty <= 0;
 
-    // 1. Optimistic UI（用 functional setState 取真實快照）
+    // 1. Optimistic UI
     let snapshot = null;
     setPosts(prev => {
       snapshot = prev;
@@ -217,21 +222,26 @@ export const usePosts = (triggerToast) => {
     });
 
     try {
-      // 2. 呼叫 DB RPC（原子性：鎖行→檢查→遞減→寫 reservation）
-      const { data, error } = await supabase.rpc('claim_post', {
-        p_post_id: post.id,
-        p_claimer_id: user.id,
-        p_quantity: claimQty,
+      // 2. 呼叫 v2 RPC（含 geofence + photo + escrow 一條龍）
+      const { data, error } = await supabase.rpc('claim_post_v2', {
+        p_post_id:     post.id,
+        p_qty:         claimQty,
+        p_proof_url:   proof.url,
+        p_claimer_lat: proof.lat,
+        p_claimer_lng: proof.lng,
       });
       if (error) throw error;
 
-      // RPC 回傳 { success, new_quantity, new_status, error }
       if (!data?.success) {
         const errMap = {
           CANNOT_CLAIM_OWN:      '不能領取自己發布的食物',
           NOT_AVAILABLE:         '此惜食已被領取或已截止',
           INSUFFICIENT_QUANTITY: '數量不足，已被其他人領取',
           POST_NOT_FOUND:        '找不到此惜食',
+          POST_EXPIRED:          '此惜食已過期',
+          OUT_OF_RANGE:          `距離過遠（${Math.round(data?.distance_m || 0)}m），需在 50m 內`,
+          PROOF_REQUIRED:        '需提供存證照片',
+          INVALID_QTY:           '數量錯誤',
         };
         throw new Error(errMap[data?.error] ?? '領取失敗');
       }
@@ -246,16 +256,9 @@ export const usePosts = (triggerToast) => {
         );
       });
 
-      // 4. (Phase 1 簡化版) 領取成功 → 退還代幣 + 清質押記錄
-      //    Phase 2 完整版會改由 claim_post_v2 RPC 內 atomic 處理
-      try {
-        await Promise.all([
-          supabase.from('intent_heatmap').delete().eq('post_id', post.id).eq('user_id', user.id),
-          supabase.rpc('settle_token_refund', { p_user_id: user.id }).catch(() => null),
-        ]);
-      } catch (e) { /* 非致命，realtime 會兜底 */ }
-
-      return true;
+      // 4. claim_post_v2 已 atomic 處理：DELETE intent_heatmap + 退還 token + 寫 settlement
+      //    Realtime 會自動同步 useTokens / useSettlements，不需前端再操作
+      return { success: true, settlementId: data.settlement_id, settlesAt: data.settles_at };
     } catch (error) {
       console.error('claimPost error:', error);
       if (snapshot) setPosts(snapshot);

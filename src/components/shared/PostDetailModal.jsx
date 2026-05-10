@@ -1,7 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { X, MapPin, Clock, Utensils, User, Share2, CalendarDays, Hourglass, CheckCircle2, Minus, Plus, Loader2, Lock, Coins, Flame } from 'lucide-react';
+import { X, MapPin, Clock, Utensils, User, Share2, CalendarDays, Hourglass, CheckCircle2, Minus, Plus, Loader2, Lock, Coins, Flame, Navigation } from 'lucide-react';
 import Button from '../ui/Button';
 import { LOCATIONS } from '../../data/constants';
+import { useGeofence } from '../../hooks/useGeofence';
+import { useAuth } from '../../contexts/AuthContext';
+import ClaimProofCamera from './ClaimProofCamera';
+import { uploadClaimProof } from '../../lib/uploadProof';
 
 const PostDetailModal = ({
   selectedPost, setSelectedPost, posts, triggerToast,
@@ -48,13 +52,22 @@ const PostDetailModal = ({
   const isTaken = livePost.status === 'taken' || currentQty <= 0;
   const isAvailable = !isExpired && !isTaken;
 
+  const { user } = useAuth();
   // ── Phase 1: 質押狀態 ──
   const isStakedByMe = stakedPostIds.has(livePost.id);
   const heatmapCount = heatmapCounts[livePost.id] ?? 0;
-  // 揭露的精確座標 (來自 RPC) > livePost 原本的 lat/lng (poster 自己看)
   const preciseLoc = revealedCoords[livePost.id] ?? null;
 
-  // 領取數量上限 = 剩餘數量
+  // ── Phase 2: Geofence 監聽（只有質押後才啟動，避免無謂耗電）──
+  const target = isStakedByMe
+    ? (preciseLoc || (livePost.lat && livePost.lng ? { lat: livePost.lat, lng: livePost.lng } : null))
+    : null;
+  const { distanceM, isInside, error: geoError, currentCoords } = useGeofence(target, 50);
+
+  // ── Phase 2: 拍照流程 state ──
+  const [showCamera, setShowCamera] = useState(false);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
+
   const maxClaim = currentQty;
   const safeClaimQty = Math.min(claimQty, maxClaim);
 
@@ -63,15 +76,43 @@ const PostDetailModal = ({
     await onStake(livePost.id);
   };
 
+  // 點「領取」→ 開相機（不直接 confirm；確認照片後才走 RPC）
   const handleClaim = () => {
     if (safeClaimQty < 1) return;
-    const msg = safeClaimQty === 1
-      ? '確定要領取 1 份嗎？'
-      : `確定要領取 ${safeClaimQty} 份嗎？`;
-    if (window.confirm(msg)) {
-      onClaim(livePost, safeClaimQty);
+    if (!isInside) {
+      triggerToast?.(`距離 ${Math.round(distanceM || 0)}m，需在 50m 內`, 'error');
+      return;
+    }
+    setShowCamera(true);
+  };
+
+  const handleProofConfirm = async (proofFile) => {
+    if (!user || !currentCoords) {
+      triggerToast?.('定位異常，請重試', 'error');
+      return;
+    }
+    setIsUploadingProof(true);
+    try {
+      const { path, error } = await uploadClaimProof(proofFile, livePost.id, user.id);
+      if (error || !path) {
+        triggerToast?.('證明照片上傳失敗', 'error');
+        return;
+      }
+      const ok = await onClaim(livePost, safeClaimQty, {
+        url: path,
+        lat: currentCoords.lat,
+        lng: currentCoords.lng,
+      });
+      if (ok) setShowCamera(false);
+    } catch (err) {
+      console.error('[claim] error:', err);
+      triggerToast?.('領取失敗，請重試', 'error');
+    } finally {
+      setIsUploadingProof(false);
     }
   };
+
+  // (舊 handleClaim 已由上面的拍照流程取代)
 
   return (
     <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -257,21 +298,57 @@ const PostDetailModal = ({
                 </div>
               )}
 
+              {/* Geofence 狀態提示 */}
+              {!isInside && (
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 text-xs">
+                  <Navigation className="w-3.5 h-3.5 shrink-0" />
+                  {geoError === 'PERMISSION_DENIED' ? (
+                    <span className="font-bold">請允許定位權限後重新整理</span>
+                  ) : geoError ? (
+                    <span className="font-bold">無法取得定位</span>
+                  ) : distanceM == null ? (
+                    <span>正在取得你的位置...</span>
+                  ) : (
+                    <span className="font-bold">距離 {Math.round(distanceM)}m，需在 50m 內</span>
+                  )}
+                </div>
+              )}
+              {isInside && (
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs font-bold">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> 已抵達現場 ({Math.round(distanceM)}m)
+                </div>
+              )}
+
               <Button
                 onClick={handleClaim}
-                disabled={isMutating}
-                className="w-full py-4 text-lg font-black rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                disabled={isMutating || !isInside}
+                className={`w-full py-4 text-lg font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
+                  isInside
+                    ? 'shadow-emerald-500/20'
+                    : 'bg-gray-300 dark:bg-zinc-700 text-gray-500 cursor-not-allowed'
+                }`}
               >
                 {isMutating ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> 處理中...</>
+                ) : !isInside ? (
+                  '請先抵達現場'
                 ) : (
-                  `領取 ${safeClaimQty} 份`
+                  `我拿走了 ${safeClaimQty} 份`
                 )}
               </Button>
             </>
           )}
         </div>
       </div>
+
+      {/* Phase 2: 拍照存證 modal (z-[4000] 在 PostDetailModal 之上) */}
+      {showCamera && (
+        <ClaimProofCamera
+          onCancel={() => !isUploadingProof && setShowCamera(false)}
+          onConfirm={handleProofConfirm}
+          isSubmitting={isUploadingProof || isMutating}
+        />
+      )}
     </div>
   );
 };

@@ -3,6 +3,7 @@ import { Clock, Bell, MapPin, Navigation, X, Utensils, Filter } from 'lucide-rea
 import LeafletMap from '../components/map/LeafletMap';
 import PostCard from '../components/shared/PostCard';
 import ProximityAlertBar from '../components/shared/ProximityAlertBar';
+import SettlementBanner from '../components/shared/SettlementBanner';
 import { LOCATIONS } from '../data/constants';
 import { calculateDistance } from '../utils/helpers';
 import { useProximityAlert } from '../hooks/useProximityAlert';
@@ -22,6 +23,8 @@ const HomeView = ({
   showNearbyAlert,
   // Phase 1
   tokens, stakedPostIds, revealedCoords, heatmapCounts,
+  // Phase 2
+  activeSettlement,
 }) => {
   const [filterLoc, setFilterLoc] = useState(null); 
   const [viewMode, setViewMode] = useState('all');
@@ -99,8 +102,16 @@ const HomeView = ({
       </div>
 
       {showNearbyAlert && nearbyPostAlert && !isAlertDismissed && (
-        <ProximityAlertBar post={nearbyPostAlert} onTake={(p) => onPostClaim(p, 1)} onDetail={setSelectedPost} onClose={() => setIsAlertDismissed(true)} />
+        <ProximityAlertBar
+          post={nearbyPostAlert}
+          onTake={(p) => setSelectedPost(p)}      /* Phase 2: 改為開 detail modal 走完整流程 */
+          onDetail={setSelectedPost}
+          onClose={() => setIsAlertDismissed(true)}
+        />
       )}
+
+      {/* Phase 2: 結算中倒數 banner */}
+      {activeSettlement && <SettlementBanner settlement={activeSettlement} />}
 
       {/* 地圖區域 */}
       <div className="relative h-60 mx-4 mt-4 overflow-hidden bg-white/10 dark:bg-black/20 border border-gray-200 dark:border-zinc-800 shadow-lg rounded-[28px]">
