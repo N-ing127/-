@@ -6,6 +6,8 @@ import LoginView from './views/LoginView';
 // Hooks & Services
 import { usePosts } from './hooks/usePosts';
 import { useProfile } from './hooks/useProfile';
+import { useTokens } from './hooks/useTokens';
+import { useHeatmap } from './hooks/useHeatmap';
 
 // Views
 import HomeView from './views/HomeView';
@@ -95,6 +97,8 @@ function TimeMachineApp() {
 
   const { posts, isFetching, isMutating, claimPost, reservePost, addPost } = usePosts(triggerToast);
   const { profile, setProfile, updateStats } = useProfile(triggerToast);
+  const { tokens, stakedPostIds, revealedCoords, isStaking, stakeToken } = useTokens(triggerToast);
+  const heatmapCounts = useHeatmap(posts.map(p => p.id));
 
   // 預設 profile，避免 null 時整棵 component tree 被銷毀
   const safeProfile = profile ?? {
@@ -184,6 +188,8 @@ function TimeMachineApp() {
             setActiveTab={setActiveTab} globalFilterState={globalFilterState}
             setShowFilterModal={setShowFilterModal} onPostClaim={handlePostClaim}
             onPostReserve={handlePostReserve} showNearbyAlert={safeProfile.settings?.showNearbyAlert}
+            tokens={tokens} stakedPostIds={stakedPostIds} revealedCoords={revealedCoords}
+            heatmapCounts={heatmapCounts}
           />
         )}
 
@@ -213,6 +219,8 @@ function TimeMachineApp() {
           posts={posts} triggerToast={triggerToast}
           onClaim={handlePostClaim} onReserve={handlePostReserve}
           onShare={handleSharePost} isMutating={isMutating}
+          tokens={tokens} stakedPostIds={stakedPostIds} revealedCoords={revealedCoords}
+          heatmapCounts={heatmapCounts} isStaking={isStaking} onStake={stakeToken}
         />
 
         <FilterModal 
@@ -240,7 +248,7 @@ function TimeMachineApp() {
           </div>
         )}
       </main>
-      <FloatingNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      <FloatingNav activeTab={activeTab} setActiveTab={setActiveTab} tokens={tokens} />
     </div>
   );
 }

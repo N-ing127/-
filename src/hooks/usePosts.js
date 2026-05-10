@@ -29,6 +29,10 @@ const mapPost = (raw) => {
     locationId:     matchedLoc?.id ?? null,
     locationDetail: locName.includes(' · ') ? locName.split(' · ')[1] : raw.description,
     provider:       posterName,
+    // Phase 1: 模糊化座標 (供未質押用戶顯示)
+    coarseLat:      raw.coarse_lat ? parseFloat(raw.coarse_lat) : null,
+    coarseLng:      raw.coarse_lng ? parseFloat(raw.coarse_lng) : null,
+    coarseLabel:    raw.coarse_label ?? mainLocName ?? '校園附近',
     pickupTime:     raw.created_at,
     expireTime:     raw.expires_at,
     unit:           '份',
@@ -241,6 +245,15 @@ export const usePosts = (triggerToast) => {
           p.id === post.id ? { ...p, quantity: dbQty, status: dbStatus } : p
         );
       });
+
+      // 4. (Phase 1 簡化版) 領取成功 → 退還代幣 + 清質押記錄
+      //    Phase 2 完整版會改由 claim_post_v2 RPC 內 atomic 處理
+      try {
+        await Promise.all([
+          supabase.from('intent_heatmap').delete().eq('post_id', post.id).eq('user_id', user.id),
+          supabase.rpc('settle_token_refund', { p_user_id: user.id }).catch(() => null),
+        ]);
+      } catch (e) { /* 非致命，realtime 會兜底 */ }
 
       return true;
     } catch (error) {

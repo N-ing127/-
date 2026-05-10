@@ -7,19 +7,21 @@ import { LOCATIONS } from '../data/constants';
 import { calculateDistance } from '../utils/helpers';
 import { useProximityAlert } from '../hooks/useProximityAlert';
 
-const HomeView = ({ 
-  posts, 
-  setSelectedPost, 
-  userLocation, 
-  setUserLocation, 
-  onLocateMe, 
-  isLocating, 
+const HomeView = ({
+  posts,
+  setSelectedPost,
+  userLocation,
+  setUserLocation,
+  onLocateMe,
+  isLocating,
   setActiveTab,
-  globalFilterState, 
+  globalFilterState,
   setShowFilterModal,
   onPostClaim,
   onPostReserve,
-  showNearbyAlert 
+  showNearbyAlert,
+  // Phase 1
+  tokens, stakedPostIds, revealedCoords, heatmapCounts,
 }) => {
   const [filterLoc, setFilterLoc] = useState(null); 
   const [viewMode, setViewMode] = useState('all');
@@ -103,7 +105,12 @@ const HomeView = ({
       {/* 地圖區域 */}
       <div className="relative h-60 mx-4 mt-4 overflow-hidden bg-white/10 dark:bg-black/20 border border-gray-200 dark:border-zinc-800 shadow-lg rounded-[28px]">
         <div className="w-full h-full">
-          <LeafletMap posts={posts} userLocation={userLocation} filterLoc={filterLoc} onPinClick={handlePinClick} setSelectedPost={setSelectedPost} />
+          <LeafletMap
+            posts={posts} userLocation={userLocation} filterLoc={filterLoc}
+            onPinClick={handlePinClick}
+            stakedPostIds={stakedPostIds} revealedCoords={revealedCoords}
+            onPostClick={setSelectedPost}
+          />
         </div>
         <button onClick={onLocateMe} disabled={isLocating} className="absolute bottom-3 right-3 w-10 h-10 bg-white/90 dark:bg-zinc-800/90 backdrop-blur rounded-xl shadow-lg border border-white/50 dark:border-zinc-700 flex items-center justify-center text-emerald-600 dark:text-emerald-400 z-[1001]">
           {isLocating ? <div className="animate-spin text-xs">⌛</div> : <Navigation className="w-5 h-5 fill-current" />}

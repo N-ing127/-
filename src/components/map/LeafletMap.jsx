@@ -63,36 +63,62 @@ function MapUpdater({ filterLoc, userLocation }) {
   return null;
 }
 
-const LeafletMap = ({ posts, userLocation, filterLoc, onPinClick }) => {
+// 精確質押 marker（金幣圖示，僅自己看得到）
+const stakedPreciseIcon = L.divIcon({
+  html: `
+    <div class="relative flex items-center justify-center">
+      <div class="absolute w-12 h-12 bg-amber-400/30 rounded-full animate-ping"></div>
+      <div class="w-9 h-9 bg-gradient-to-tr from-amber-400 to-yellow-300 rounded-full shadow-xl shadow-amber-500/50 flex items-center justify-center border-[3px] border-white">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#78350f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="8"/><path d="M9 9h6"/><path d="M9 12h6"/><path d="M9 15h4"/>
+        </svg>
+      </div>
+    </div>
+  `,
+  className: 'staked-marker-wrapper',
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+});
+
+const LeafletMap = ({
+  posts, userLocation, filterLoc, onPinClick,
+  stakedPostIds = new Set(), revealedCoords = {}, onPostClick,
+}) => {
+  // 我已質押 + 有揭露座標的 posts
+  const stakedPosts = (posts || []).filter(p =>
+    stakedPostIds.has(p.id) && (revealedCoords[p.id] || (p.lat && p.lng))
+  );
+
   return (
-    <MapContainer 
-      center={[NTU_CENTER.lat, NTU_CENTER.lng]} 
-      zoom={16} 
+    <MapContainer
+      center={[NTU_CENTER.lat, NTU_CENTER.lng]}
+      zoom={16}
       className="w-full h-full"
       zoomControl={false}
     >
       <TileLayer
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
       />
-      
+
       <MapUpdater filterLoc={filterLoc} userLocation={userLocation} />
 
+      {/* 第一層：地標模糊聚合 (所有人看得到) */}
       {LOCATIONS.map(loc => {
         const locPosts = (posts || []).filter(p => p.locationId === loc.id && p.status !== 'taken');
         const hasFood = locPosts.length > 0;
         const hasReserved = locPosts.some(p => p.status === 'reserved');
-        
+
         return (
-          <Marker 
-            key={loc.id} 
-            position={[loc.lat, loc.lng]} 
+          <Marker
+            key={loc.id}
+            position={[loc.lat, loc.lng]}
             icon={createCustomIcon(hasReserved ? 'reserved' : 'available', hasFood)}
             eventHandlers={{ click: () => onPinClick(loc.id) }}
           >
-            <Tooltip 
+            <Tooltip
               permanent={hasFood}
-              direction="top" 
-              offset={[0, -12]} 
+              direction="top"
+              offset={[0, -12]}
               className={`border-none shadow-none bg-transparent font-bold text-[11px] ${hasFood ? 'text-emerald-700 dark:text-emerald-400 opacity-100' : 'text-gray-400 opacity-60'}`}
             >
               {loc.name}
@@ -109,8 +135,26 @@ const LeafletMap = ({ posts, userLocation, filterLoc, onPinClick }) => {
         );
       })}
 
-      <Marker 
-        position={[userLocation.lat, userLocation.lng]} 
+      {/* 第二層：我已質押的 posts 精確 marker (僅自己看得到) */}
+      {stakedPosts.map(p => {
+        const coord = revealedCoords[p.id] ?? { lat: p.lat, lng: p.lng };
+        return (
+          <Marker
+            key={`staked-${p.id}`}
+            position={[coord.lat, coord.lng]}
+            icon={stakedPreciseIcon}
+            eventHandlers={onPostClick ? { click: () => onPostClick(p) } : undefined}
+            zIndexOffset={1000}
+          >
+            <Tooltip direction="top" offset={[0, -18]} className="bg-amber-50 border border-amber-200 text-amber-900 font-bold text-[11px] px-2 py-1 rounded shadow">
+              {p.foodType} · 已質押
+            </Tooltip>
+          </Marker>
+        );
+      })}
+
+      <Marker
+        position={[userLocation.lat, userLocation.lng]}
         icon={L.divIcon({
           html: '<div class="w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-lg"></div>',
           className: 'user-marker',

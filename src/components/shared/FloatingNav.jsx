@@ -1,7 +1,8 @@
 import React from 'react';
 import { Home, Plus, User } from 'lucide-react';
+import TokenBadge from './TokenBadge';
 
-const FloatingNav = ({ activeTab, setActiveTab }) => {
+const FloatingNav = ({ activeTab, setActiveTab, tokens = 2 }) => {
   // 輔助函式：側邊按鈕樣式 (保留文字標籤)
   const getNavItemClass = (isActive) =>
     `flex flex-col items-center justify-center gap-1 transition-all duration-300 w-16 ${
@@ -12,6 +13,10 @@ const FloatingNav = ({ activeTab, setActiveTab }) => {
 
   return (
     <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[90%] max-w-[360px] z-[1500]">
+      {/* 浮動代幣徽章：定位在 nav 右上方 */}
+      <div className="absolute -top-3 right-2 z-10">
+        <TokenBadge tokens={tokens} size="sm" />
+      </div>
       {/* 步驟一：升級導航欄主體 (Liquid Glass Body)
          - backdrop-blur-3xl: 極致模糊
          - hover:scale-[1.02]: 懸浮時整體微放大 (Micro-interaction)
