@@ -4,6 +4,7 @@ import Button from '../components/ui/Button';
 import { LOCATIONS, FOOD_TYPES, PREDEFINED_TAGS } from '../data/constants';
 import { getTodayDateString } from '../utils/helpers';
 import { uploadFoodImage } from '../lib/uploadImage';
+import { compressImage } from '../lib/compressImage';
 
 const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => { 
   const [formData, setFormData] = useState({
@@ -26,7 +27,7 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
 
   const formInputStyle = "w-full p-3 bg-white/70 dark:bg-zinc-900/70 rounded-xl border border-transparent dark:border-zinc-800 shadow-inner text-gray-800 dark:text-zinc-200 focus:ring-2 focus:ring-emerald-500 transition-all outline-none placeholder:text-gray-400 dark:placeholder:text-zinc-600";
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -37,17 +38,27 @@ const PostFoodView = ({ onCreatePost, setActiveTab, triggerToast }) => {
       e.target.value = ''; // 清掉 input，允許再次選同一檔
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      triggerToast('檔案過大（> 5MB），請壓縮後再傳', 'error');
+    // 原檔上限放寬到 15MB（壓縮後一定 < 1MB）
+    if (file.size > 15 * 1024 * 1024) {
+      triggerToast('檔案過大（> 15MB），請先在相簿縮圖', 'error');
       e.target.value = '';
       return;
     }
 
-    // 釋放舊的 blob URL，避免記憶體洩漏
+    // 釋放舊 blob URL
     if (imagePreview) URL.revokeObjectURL(imagePreview);
 
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+    // ── 壓縮：選圖瞬間就壓，預覽顯示的就是上傳的版本 ──
+    triggerToast('處理圖片中…', 'success');
+    const compressed = await compressImage(file);
+    if (compressed.size < file.size) {
+      const ratio = ((1 - compressed.size / file.size) * 100).toFixed(0);
+      triggerToast(`圖片已壓縮 ${ratio}% (${(compressed.size / 1024).toFixed(0)}KB)`, 'success');
+    }
+
+    setImageFile(compressed);
+    setImagePreview(URL.createObjectURL(compressed));
+    e.target.value = ''; // 允許重選同檔
   };
 
   const clearImage = () => {

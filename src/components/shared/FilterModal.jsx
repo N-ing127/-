@@ -37,12 +37,12 @@ const FilterModal = ({ show, onClose, initialState, onApply }) => {
       {/* 背景遮罩 */}
       <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
       
-      {/* 玻璃擬態底部面板 */}
+      {/* 玻璃擬態底部面板：動態高度 + 永置底 CTA + safe-area */}
       <div className={`
-        bg-white/90 dark:bg-zinc-900/90 backdrop-blur-3xl w-full max-w-md rounded-t-[32px] 
+        bg-white/90 dark:bg-zinc-900/90 backdrop-blur-3xl w-full max-w-md rounded-t-[32px]
         border border-white/60 dark:border-zinc-800 shadow-2xl relative z-10
         animate-in slide-in-from-bottom duration-300
-        flex flex-col h-[70vh] sm:h-auto sm:max-h-[80vh] overflow-hidden
+        flex flex-col max-h-[85vh] sm:max-h-[80vh] overflow-hidden
       `}>
         
         {/* 頂部標題與拉條 */}
@@ -58,8 +58,8 @@ const FilterModal = ({ show, onClose, initialState, onApply }) => {
           </div>
         </div>
 
-        {/* 篩選內容區 (可滾動) */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-8">
+        {/* 篩選內容區 (可滾動，含底部 buffer 防被 sticky button 切到) */}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-5 pb-8 space-y-8">
           
           {/* 1. 食物種類 */}
           <div>
@@ -133,8 +133,8 @@ const FilterModal = ({ show, onClose, initialState, onApply }) => {
           </div>
         </div>
 
-        {/* 底部按鈕區 */}
-        <div className="p-5 border-t border-white/50 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-lg grid grid-cols-2 gap-3">
+        {/* 底部按鈕區：shrink-0 永置底 + safe-area for iPhone */}
+        <div className="shrink-0 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] border-t border-white/50 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-lg grid grid-cols-2 gap-3">
           <Button onClick={handleReset} variant="ghost" className="py-3 text-sm dark:text-zinc-400">
             重設
           </Button>

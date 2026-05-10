@@ -58,13 +58,14 @@ const PostDetailModal = ({ selectedPost, setSelectedPost, posts, triggerToast, o
 
   return (
     <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="relative w-full max-w-md bg-stone-50 dark:bg-zinc-950 rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto">
-        <button onClick={() => { setSelectedPost(null); setClaimQty(1); }} className="absolute top-5 right-5 p-2 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-400 hover:text-gray-600 transition-colors z-10">
+      {/* flex-col：圖片固定 / 內容滾動 / CTA 永置底；max-h 用 dvh 對應 iOS Safari URL bar */}
+      <div className="relative w-full max-w-md bg-stone-50 dark:bg-zinc-950 rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh] sm:max-h-[85dvh]">
+        <button onClick={() => { setSelectedPost(null); setClaimQty(1); }} className="absolute top-5 right-5 p-2 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-400 hover:text-gray-600 transition-colors z-20">
           <X className="w-5 h-5" />
         </button>
 
-        {/* 圖片區域 */}
-        <div className="relative h-64 w-full bg-gradient-to-br from-emerald-200 to-teal-300 dark:from-zinc-800 dark:to-zinc-900 overflow-hidden">
+        {/* 圖片區域：固定 不參與滾動 */}
+        <div className="relative h-64 w-full shrink-0 bg-gradient-to-br from-emerald-200 to-teal-300 dark:from-zinc-800 dark:to-zinc-900 overflow-hidden">
           {livePost.imageUrl && (
             <img
               src={livePost.imageUrl}
@@ -106,8 +107,8 @@ const PostDetailModal = ({ selectedPost, setSelectedPost, posts, triggerToast, o
           </div>
         </div>
 
-        {/* 內容區域 */}
-        <div className="p-6 space-y-5 text-gray-800 dark:text-zinc-100">
+        {/* 內容區域：flex-1 撐滿剩餘空間 + 自身 scroll */}
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 pb-3 space-y-5 text-gray-800 dark:text-zinc-100">
           <div className="flex items-center gap-3 p-3 bg-stone-100 dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800">
             <MapPin className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             <div>
@@ -149,55 +150,56 @@ const PostDetailModal = ({ selectedPost, setSelectedPost, posts, triggerToast, o
             </div>
           </div>
 
-          {/* 領取操作區 */}
-          <div className="pt-4 space-y-3">
-            {isAvailable && (
-              <>
-                {/* 數量選擇器（多份時顯示）*/}
-                {maxClaim > 1 && (
-                  <div className="flex items-center justify-center gap-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800">
-                    <span className="text-sm font-bold text-gray-600 dark:text-zinc-300">領取數量</span>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setClaimQty(q => Math.max(1, q - 1))}
-                        disabled={safeClaimQty <= 1}
-                        className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-gray-600 dark:text-zinc-300 disabled:opacity-30 transition-all active:scale-90"
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
-                      <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 w-8 text-center">{safeClaimQty}</span>
-                      <button
-                        onClick={() => setClaimQty(q => Math.min(maxClaim, q + 1))}
-                        disabled={safeClaimQty >= maxClaim}
-                        className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-gray-600 dark:text-zinc-300 disabled:opacity-30 transition-all active:scale-90"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <span className="text-xs text-gray-400">/ {maxClaim}</span>
+        </div>
+
+        {/* 永置底 CTA Bar：含 safe-area padding 防 iPhone home indicator 遮蓋 */}
+        <div className="shrink-0 border-t border-gray-100 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3">
+          {isAvailable && (
+            <>
+              {/* 數量選擇器（多份時顯示）*/}
+              {maxClaim > 1 && (
+                <div className="flex items-center justify-center gap-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800">
+                  <span className="text-sm font-bold text-gray-600 dark:text-zinc-300">領取數量</span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setClaimQty(q => Math.max(1, q - 1))}
+                      disabled={safeClaimQty <= 1}
+                      className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-gray-600 dark:text-zinc-300 disabled:opacity-30 transition-all active:scale-90"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="text-xl font-black text-emerald-600 dark:text-emerald-400 w-8 text-center">{safeClaimQty}</span>
+                    <button
+                      onClick={() => setClaimQty(q => Math.min(maxClaim, q + 1))}
+                      disabled={safeClaimQty >= maxClaim}
+                      className="w-8 h-8 rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex items-center justify-center text-gray-600 dark:text-zinc-300 disabled:opacity-30 transition-all active:scale-90"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
                   </div>
+                  <span className="text-xs text-gray-400">/ {maxClaim}</span>
+                </div>
+              )}
+
+              <Button
+                onClick={handleClaim}
+                disabled={isMutating}
+                className="w-full py-4 text-lg font-black rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              >
+                {isMutating ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" /> 處理中...</>
+                ) : (
+                  `領取 ${safeClaimQty} 份`
                 )}
-
-                <Button
-                  onClick={handleClaim}
-                  disabled={isMutating}
-                  className="w-full py-4 text-lg font-black rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-                >
-                  {isMutating ? (
-                    <><Loader2 className="w-5 h-5 animate-spin" /> 處理中...</>
-                  ) : (
-                    `領取 ${safeClaimQty} 份`
-                  )}
-                </Button>
-              </>
-            )}
-
-            {(isExpired || isTaken) && (
-              <Button disabled className="w-full py-4 text-lg font-black rounded-2xl bg-gray-300 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400">
-                {isExpired ? '已截止' : '已領完'}
               </Button>
-            )}
-          </div>
+            </>
+          )}
+
+          {(isExpired || isTaken) && (
+            <Button disabled className="w-full py-4 text-lg font-black rounded-2xl bg-gray-300 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400">
+              {isExpired ? '已截止' : '已領完'}
+            </Button>
+          )}
         </div>
       </div>
     </div>
