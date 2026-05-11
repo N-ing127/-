@@ -9,6 +9,7 @@ import { useProfile } from './hooks/useProfile';
 import { useTokens } from './hooks/useTokens';
 import { useHeatmap } from './hooks/useHeatmap';
 import { useSettlements } from './hooks/useSettlements';
+import { useGhostStates } from './hooks/useGhostStates';
 
 // Views
 import HomeView from './views/HomeView';
@@ -101,8 +102,13 @@ function TimeMachineApp() {
   const { tokens, stakedPostIds, revealedCoords, isStaking, stakeToken } = useTokens(triggerToast);
   const heatmapCounts = useHeatmap(posts.map(p => p.id));
   const settlements = useSettlements();
-  // 找正在 escrow 的 settlement (顯示主頁倒數 banner)
-  const activeSettlement = settlements.find(s => s.isInWindow) || null;
+  // 主頁 banner 優先順序：voided (要警示) > pending in window > 最近 settled
+  const activeSettlement =
+    settlements.find(s => s.status === 'voided') ||
+    settlements.find(s => s.isInWindow) ||
+    null;
+  // Phase 3: ghost states — 我 stake 過、被別人領走 pending 中的 post
+  const ghostPosts = useGhostStates();
 
   // 預設 profile，避免 null 時整棵 component tree 被銷毀
   const safeProfile = profile ?? {
@@ -197,6 +203,8 @@ function TimeMachineApp() {
             tokens={tokens} stakedPostIds={stakedPostIds} revealedCoords={revealedCoords}
             heatmapCounts={heatmapCounts}
             activeSettlement={activeSettlement}
+            ghostPosts={ghostPosts}
+            triggerToast={triggerToast}
           />
         )}
 
@@ -228,6 +236,7 @@ function TimeMachineApp() {
           onShare={handleSharePost} isMutating={isMutating}
           tokens={tokens} stakedPostIds={stakedPostIds} revealedCoords={revealedCoords}
           heatmapCounts={heatmapCounts} isStaking={isStaking} onStake={stakeToken}
+          ghostPosts={ghostPosts}
         />
 
         <FilterModal 

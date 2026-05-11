@@ -80,9 +80,28 @@ const stakedPreciseIcon = L.divIcon({
   iconAnchor: [18, 18],
 });
 
+// Phase 3: Ghost marker (灰色殘影，已被別人領走、結算中)
+const ghostIcon = L.divIcon({
+  html: `
+    <div class="relative flex items-center justify-center opacity-70">
+      <div class="w-9 h-9 bg-gray-400 rounded-full shadow-lg flex items-center justify-center border-[3px] border-white/80" style="filter: grayscale(100%);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 2a7 7 0 0 0-7 7v11l3-3 3 3 3-3 3 3 3-3 3 3V9a7 7 0 0 0-7-7H9z"/>
+          <circle cx="9" cy="10" r="1.5" fill="white"/>
+          <circle cx="15" cy="10" r="1.5" fill="white"/>
+        </svg>
+      </div>
+    </div>
+  `,
+  className: 'ghost-marker-wrapper',
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+});
+
 const LeafletMap = ({
   posts, userLocation, filterLoc, onPinClick,
   stakedPostIds = new Set(), revealedCoords = {}, onPostClick,
+  ghostPosts = [],
 }) => {
   // 我已質押 + 有揭露座標的 posts
   const stakedPosts = (posts || []).filter(p =>
@@ -152,6 +171,21 @@ const LeafletMap = ({
           </Marker>
         );
       })}
+
+      {/* 第三層：Ghost markers — 我 stake 過、被別人領走 pending 中 */}
+      {ghostPosts.filter(g => g.lat && g.lng).map(g => (
+        <Marker
+          key={`ghost-${g.id}`}
+          position={[g.lat, g.lng]}
+          icon={ghostIcon}
+          eventHandlers={onPostClick ? { click: () => onPostClick(g) } : undefined}
+          zIndexOffset={900}
+        >
+          <Tooltip direction="top" offset={[0, -18]} className="bg-gray-50 border border-gray-300 text-gray-700 font-bold text-[11px] px-2 py-1 rounded shadow">
+            {g.foodType} · 結算中
+          </Tooltip>
+        </Marker>
+      ))}
 
       <Marker
         position={[userLocation.lat, userLocation.lng]}

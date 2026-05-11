@@ -5,6 +5,8 @@ import { LOCATIONS } from '../../data/constants';
 import { useGeofence } from '../../hooks/useGeofence';
 import { useAuth } from '../../contexts/AuthContext';
 import ClaimProofCamera from './ClaimProofCamera';
+import GhostCountdown from './GhostCountdown';
+import DisputeReportModal from './DisputeReportModal';
 import { uploadClaimProof } from '../../lib/uploadProof';
 
 const PostDetailModal = ({
@@ -13,18 +15,28 @@ const PostDetailModal = ({
   // Phase 1 新增
   tokens = 0, stakedPostIds = new Set(), revealedCoords = {}, heatmapCounts = {},
   isStaking = false, onStake,
+  // Phase 3
+  ghostPosts = [],
 }) => {
   // ⚠️ 所有 hooks 必須在 early return 之前，遵守 Rules of Hooks
   const [claimQty, setClaimQty] = useState(1);
   const [showCamera, setShowCamera] = useState(false);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const [showGhostDispute, setShowGhostDispute] = useState(false);  // Phase 4
   const { user } = useAuth();
 
-  // 從最新 posts 取得即時數據
+  // 從最新 posts 取得即時數據；若不在 posts 內 (已 taken) 但在 ghostPosts 內 → 取 ghost
   const livePost = useMemo(() => {
     if (!selectedPost) return null;
-    return posts?.find(p => p.id === selectedPost.id) ?? selectedPost;
-  }, [selectedPost, posts]);
+    const fromPosts = posts?.find(p => p.id === selectedPost.id);
+    if (fromPosts) return fromPosts;
+    const fromGhosts = ghostPosts?.find(g => g.id === selectedPost.id);
+    if (fromGhosts) return fromGhosts;
+    return selectedPost;
+  }, [selectedPost, posts, ghostPosts]);
+
+  // 是否為 ghost (被別人領走、結算中)
+  const isGhost = livePost?.isGhost === true;
 
   // ── Phase 1/2 衍生狀態（先計算，後面 useGeofence 要用 target）──
   const isStakedByMe = livePost ? stakedPostIds.has(livePost.id) : false;
@@ -244,15 +256,23 @@ const PostDetailModal = ({
         {/* 永置底 CTA Bar */}
         <div className="shrink-0 border-t border-gray-100 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3">
 
-          {/* 截止 / 領完狀態 */}
-          {(isExpired || isTaken) && (
+          {/* Phase 3 + 4: Ghost State + 真實舉報 */}
+          {isGhost && (
+            <GhostCountdown
+              settlesAt={livePost.settlesAt}
+              onReport={() => setShowGhostDispute(true)}
+            />
+          )}
+
+          {/* 截止 / 領完狀態 (非 ghost) */}
+          {!isGhost && (isExpired || isTaken) && (
             <Button disabled className="w-full py-4 text-lg font-black rounded-2xl bg-gray-300 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400">
               {isExpired ? '已截止' : '已領完'}
             </Button>
           )}
 
           {/* 可用：未質押 → 質押按鈕；已質押 → 領取流程 */}
-          {isAvailable && !isStakedByMe && (
+          {!isGhost && isAvailable && !isStakedByMe && (
             <Button
               onClick={handleStake}
               disabled={isStaking || tokens <= 0}
@@ -273,7 +293,7 @@ const PostDetailModal = ({
             </Button>
           )}
 
-          {isAvailable && isStakedByMe && (
+          {!isGhost && isAvailable && isStakedByMe && (
             <>
               {maxClaim > 1 && (
                 <div className="flex items-center justify-center gap-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800">
@@ -348,6 +368,26 @@ const PostDetailModal = ({
           onCancel={() => !isUploadingProof && setShowCamera(false)}
           onConfirm={handleProofConfirm}
           isSubmitting={isUploadingProof || isMutating}
+        />
+      )}
+
+      {/* Phase 4: Ghost 舉報 modal */}
+      {showGhostDispute && isGhost && (
+        <DisputeReportModal
+          mode="ghost_misreport"
+          target={{
+            lat: preciseLoc?.lat ?? livePost.lat,
+            lng: preciseLoc?.lng ?? livePost.lng,
+            label: livePost.locationName || livePost.foodType,
+          }}
+          settlementId={livePost.settlementId}
+          postId={livePost.id}
+          triggerToast={triggerToast}
+          onCancel={() => setShowGhostDispute(false)}
+          onResolved={() => {
+            setShowGhostDispute(false);
+            setSelectedPost(null);  // 關閉整個 detail modal，使用者回主頁看更新
+          }}
         />
       )}
     </div>

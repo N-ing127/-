@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Clock, Bell, MapPin, Navigation, X, Utensils, Filter } from 'lucide-react';
+import { Clock, Bell, MapPin, Navigation, X, Utensils, Filter, Ban } from 'lucide-react';
 import LeafletMap from '../components/map/LeafletMap';
 import PostCard from '../components/shared/PostCard';
 import ProximityAlertBar from '../components/shared/ProximityAlertBar';
 import SettlementBanner from '../components/shared/SettlementBanner';
+import PhantomFinderModal from '../components/shared/PhantomFinderModal';
 import { LOCATIONS } from '../data/constants';
 import { calculateDistance } from '../utils/helpers';
 import { useProximityAlert } from '../hooks/useProximityAlert';
@@ -25,9 +26,14 @@ const HomeView = ({
   tokens, stakedPostIds, revealedCoords, heatmapCounts,
   // Phase 2
   activeSettlement,
+  // Phase 3
+  ghostPosts = [],
+  // Phase 4
+  triggerToast,
 }) => {
-  const [filterLoc, setFilterLoc] = useState(null); 
+  const [filterLoc, setFilterLoc] = useState(null);
   const [viewMode, setViewMode] = useState('all');
+  const [showPhantomFinder, setShowPhantomFinder] = useState(false);
 
   const nearbyPostAlert = useProximityAlert(posts, userLocation);
   const [isAlertDismissed, setIsAlertDismissed] = useState(false);
@@ -95,11 +101,30 @@ const HomeView = ({
             <span className="text-[10px] font-bold text-emerald-600/80 tracking-[0.2em] uppercase mt-0.5 ml-0.5">食 光 機</span>
           </div>
         </div>
-        <button onClick={() => setActiveTab('notifications')} className="relative p-2.5 rounded-full hover:bg-white/50 dark:hover:bg-zinc-800 border border-transparent hover:border-white/50 dark:hover:border-zinc-700 hover:shadow-sm">
-          <Bell className="w-6 h-6 text-slate-600 dark:text-zinc-400" />
-          <span className="absolute top-2 right-2.5 w-2 h-2 bg-rose-500 rounded-full border border-white dark:border-zinc-900 shadow-sm"></span>
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Phase 4: 幽靈舉報入口 */}
+          <button
+            onClick={() => setShowPhantomFinder(true)}
+            className="p-2.5 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 border border-transparent text-slate-600 dark:text-zinc-400 hover:text-red-600 transition-colors"
+            aria-label="舉報幽靈便當"
+            title="舉報幽靈便當"
+          >
+            <Ban className="w-5 h-5" />
+          </button>
+          <button onClick={() => setActiveTab('notifications')} className="relative p-2.5 rounded-full hover:bg-white/50 dark:hover:bg-zinc-800 border border-transparent hover:border-white/50 dark:hover:border-zinc-700 hover:shadow-sm">
+            <Bell className="w-6 h-6 text-slate-600 dark:text-zinc-400" />
+            <span className="absolute top-2 right-2.5 w-2 h-2 bg-rose-500 rounded-full border border-white dark:border-zinc-900 shadow-sm"></span>
+          </button>
+        </div>
       </div>
+
+      {/* Phase 4: Phantom Finder Modal */}
+      {showPhantomFinder && (
+        <PhantomFinderModal
+          onClose={() => setShowPhantomFinder(false)}
+          triggerToast={triggerToast}
+        />
+      )}
 
       {showNearbyAlert && nearbyPostAlert && !isAlertDismissed && (
         <ProximityAlertBar
@@ -120,6 +145,7 @@ const HomeView = ({
             posts={posts} userLocation={userLocation} filterLoc={filterLoc}
             onPinClick={handlePinClick}
             stakedPostIds={stakedPostIds} revealedCoords={revealedCoords}
+            ghostPosts={ghostPosts}
             onPostClick={setSelectedPost}
           />
         </div>
