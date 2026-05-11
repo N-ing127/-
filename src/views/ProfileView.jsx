@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   CheckCircle, Settings, Camera, Award, Leaf, X,
-  Megaphone, Moon, Sun, User, ChevronRight, LogOut
+  Megaphone, Moon, Sun, User, ChevronRight, LogOut,
+  Shield, Ghost, Flag, AlertOctagon
 } from 'lucide-react';
 import { ACHIEVEMENTS_DATA } from '../data/constants';
 import AnimatedStatCard from '../components/shared/AnimatedStatCard';
@@ -177,6 +178,59 @@ const ProfileView = ({ setActiveTab, profile, setProfile, isDark, setIsDark }) =
                <ChevronRight className="w-4 h-4" />
              </div>
            </div>
+        </div>
+
+        {/* Phase 5/6: 信任分 + 徽章 + 警示 */}
+        <div className="mt-4 p-4 rounded-3xl bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <p className="text-[10px] uppercase tracking-widest text-gray-400 font-bold">信任積分</p>
+              <p className={`text-2xl font-black ${
+                (profile?.trustScore ?? 100) >= 100 ? 'text-emerald-600'
+                : (profile?.trustScore ?? 100) >= 70 ? 'text-amber-600'
+                : 'text-red-600'
+              }`}>{profile?.trustScore ?? 100}</p>
+            </div>
+            <div className="flex gap-1.5">
+              {profile?.isGhostHunter && (
+                <span className="px-2.5 py-1 bg-zinc-900 text-amber-400 text-[10px] font-black rounded-full flex items-center gap-1">
+                  <Ghost className="w-3 h-3" /> 獵手
+                </span>
+              )}
+              {profile?.isVerifiedPartner && (
+                <span className="px-2.5 py-1 bg-blue-500 text-white text-[10px] font-black rounded-full flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> 認證
+                </span>
+              )}
+              {profile?.isAdmin && (
+                <span className="px-2.5 py-1 bg-purple-600 text-white text-[10px] font-black rounded-full flex items-center gap-1">
+                  <Shield className="w-3 h-3" /> Admin
+                </span>
+              )}
+            </div>
+          </div>
+
+          {profile?.flaggedCountMonth >= 1 && (
+            <div className="flex items-center gap-2 text-xs bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 p-2 rounded-xl">
+              <Flag className="w-4 h-4" />
+              <span className="font-bold">本月已被標記 {profile.flaggedCountMonth} 次 (≥3 將進入人工審查)</span>
+            </div>
+          )}
+          {profile?.isShadowbanned && (
+            <div className="flex items-center gap-2 text-xs bg-gray-900 text-white p-2 rounded-xl">
+              <AlertOctagon className="w-4 h-4" />
+              <span className="font-bold">你的貼文已被全網隱蔽 (被 5+ 用戶封鎖)</span>
+            </div>
+          )}
+
+          {profile?.isAdmin && (
+            <button
+              onClick={() => setActiveTab('admin')}
+              className="w-full p-3 bg-gradient-to-r from-purple-500 to-fuchsia-500 text-white font-black text-sm rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-purple-500/30 active:scale-95"
+            >
+              <Shield className="w-4 h-4" /> 進入後台管理
+            </button>
+          )}
         </div>
 
         {/* 登出按鈕 */}

@@ -7,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import ClaimProofCamera from './ClaimProofCamera';
 import GhostCountdown from './GhostCountdown';
 import DisputeReportModal from './DisputeReportModal';
+import BlockUserButton from './BlockUserButton';
 import { uploadClaimProof } from '../../lib/uploadProof';
 
 const PostDetailModal = ({
@@ -17,6 +18,8 @@ const PostDetailModal = ({
   isStaking = false, onStake,
   // Phase 3
   ghostPosts = [],
+  // Phase 5/6/Admin
+  isAdmin = false,
 }) => {
   // ⚠️ 所有 hooks 必須在 early return 之前，遵守 Rules of Hooks
   const [claimQty, setClaimQty] = useState(1);
@@ -89,10 +92,10 @@ const PostDetailModal = ({
     await onStake(livePost.id);
   };
 
-  // 點「領取」→ 開相機（不直接 confirm；確認照片後才走 RPC）
+  // 點「領取」→ 開相機（admin 跳過 geofence）
   const handleClaim = () => {
     if (safeClaimQty < 1) return;
-    if (!isInside) {
+    if (!isInside && !isAdmin) {
       triggerToast?.(`距離 ${Math.round(distanceM || 0)}m，需在 50m 內`, 'error');
       return;
     }
@@ -271,6 +274,19 @@ const PostDetailModal = ({
             </Button>
           )}
 
+          {/* Phase 5: 封鎖發布者 (非 ghost、非自己發布) */}
+          {!isGhost && livePost.posterId && livePost.posterId !== user?.id && (
+            <div className="flex justify-center pt-1">
+              <BlockUserButton
+                posterId={livePost.posterId}
+                postId={livePost.id}
+                posterName={livePost.provider}
+                triggerToast={triggerToast}
+                onBlocked={() => setSelectedPost(null)}
+              />
+            </div>
+          )}
+
           {/* 可用：未質押 → 質押按鈕；已質押 → 領取流程 */}
           {!isGhost && isAvailable && !isStakedByMe && (
             <Button
@@ -319,8 +335,15 @@ const PostDetailModal = ({
                 </div>
               )}
 
-              {/* Geofence 狀態提示 */}
-              {!isInside && (
+              {/* Admin bypass 標籤 */}
+              {isAdmin && (
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs font-black">
+                  ⚡ Admin Bypass — 跳過 50m 限制
+                </div>
+              )}
+
+              {/* Geofence 狀態提示 (admin 跳過) */}
+              {!isAdmin && !isInside && (
                 <div className="flex items-center gap-2 p-2.5 rounded-xl bg-gray-100 dark:bg-zinc-800 text-gray-600 dark:text-zinc-400 text-xs">
                   <Navigation className="w-3.5 h-3.5 shrink-0" />
                   {geoError === 'PERMISSION_DENIED' ? (
@@ -334,7 +357,7 @@ const PostDetailModal = ({
                   )}
                 </div>
               )}
-              {isInside && (
+              {!isAdmin && isInside && (
                 <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-xs font-bold">
                   <CheckCircle2 className="w-3.5 h-3.5" /> 已抵達現場 ({Math.round(distanceM)}m)
                 </div>
@@ -342,16 +365,16 @@ const PostDetailModal = ({
 
               <Button
                 onClick={handleClaim}
-                disabled={isMutating || !isInside}
+                disabled={isMutating || (!isInside && !isAdmin)}
                 className={`w-full py-4 text-lg font-black rounded-2xl shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
-                  isInside
+                  (isInside || isAdmin)
                     ? 'shadow-emerald-500/20'
                     : 'bg-gray-300 dark:bg-zinc-700 text-gray-500 cursor-not-allowed'
                 }`}
               >
                 {isMutating ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> 處理中...</>
-                ) : !isInside ? (
+                ) : (!isInside && !isAdmin) ? (
                   '請先抵達現場'
                 ) : (
                   `我拿走了 ${safeClaimQty} 份`

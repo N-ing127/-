@@ -43,6 +43,16 @@ export const usePosts = (triggerToast) => {
       .limit(100);
 
     try {
+      // 取得我的封鎖名單 + shadowbanned 用戶 (前端兜底 filter)
+      const [{ data: blocks }, { data: shadowbanned }] = await Promise.all([
+        supabase.from('user_blocks').select('blocked_id').eq('blocker_id', user.id),
+        supabase.from('profiles').select('id').eq('is_shadowbanned', true),
+      ]);
+      const hiddenPosterIds = new Set([
+        ...(blocks ?? []).map(b => b.blocked_id),
+        ...(shadowbanned ?? []).map(p => p.id),
+      ]);
+
       let { data: postsData, error: postsErr } = await queryPosts();
 
       // 401 / JWT 過期 → refresh token 後重打一次；若仍失敗強制登出
@@ -81,7 +91,11 @@ export const usePosts = (triggerToast) => {
         ...p,
         profiles: { display_name: profileMap[p.poster_id] ?? '匿名食光人' },
       }));
-      setPosts(merged.map(mapPost));
+      // 套用封鎖 / shadowban filter (admin 不過濾，看全部)
+      const finalPosts = merged
+        .map(mapPost)
+        .filter(p => !hiddenPosterIds.has(p.posterId));
+      setPosts(finalPosts);
     } catch (err) {
       console.error('[usePosts] fetch failed:', err?.message || err);
       if (!silent && triggerToast) triggerToast('載入失敗，請檢查網路', 'error');

@@ -27,6 +27,16 @@ const mapProfile = (raw) => {
       notificationRadius: raw.notification_radius,
     },
 
+    // ── Phase 1/4/5/6 新欄位（用於前端權限與徽章判斷）──
+    tokensAvailable:    raw.tokens_available ?? 2,
+    trustScore:         raw.trust_score ?? 100,
+    isAdmin:            raw.is_admin === true,
+    isGhostHunter:      raw.is_ghost_hunter === true,
+    isVerifiedPartner:  raw.is_verified_partner === true,
+    isShadowbanned:     raw.is_shadowbanned === true,
+    flaggedCountMonth:  raw.flagged_count_month ?? 0,
+    hunterUnlockedAt:   raw.hunter_unlocked_at,
+
     // ── 向後相容欄位（ProfileView 使用）──
     name:       raw.display_name,
     avatar:     raw.avatar_url,

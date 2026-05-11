@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { CheckCircle, AlertCircle, Award, X, Sparkles, PartyPopper } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import LoginView from './views/LoginView';
@@ -10,6 +10,7 @@ import { useTokens } from './hooks/useTokens';
 import { useHeatmap } from './hooks/useHeatmap';
 import { useSettlements } from './hooks/useSettlements';
 import { useGhostStates } from './hooks/useGhostStates';
+import { useAllGhostStates } from './hooks/useAllGhostStates';
 
 // Views
 import HomeView from './views/HomeView';
@@ -18,6 +19,7 @@ import ProfileView from './views/ProfileView';
 import NotificationSettingsView from './views/NotificationSettingsView';
 import CarbonImpactView from './views/CarbonImpactView';
 import HistoryView from './views/HistoryView';
+import AdminDashboardView from './views/AdminDashboardView';
 
 // UI Components
 import FloatingNav from './components/shared/FloatingNav';
@@ -108,7 +110,17 @@ function TimeMachineApp() {
     settlements.find(s => s.isInWindow) ||
     null;
   // Phase 3: ghost states — 我 stake 過、被別人領走 pending 中的 post
-  const ghostPosts = useGhostStates();
+  const myGhosts = useGhostStates();
+  // Phase 6: 獵手 / Admin 看全網 ghosts
+  const hunterEnabled = (safeProfile.isGhostHunter === true) || (safeProfile.isAdmin === true);
+  const allGhosts = useAllGhostStates(hunterEnabled);
+  // 合併：個人 ghosts 永遠在 + Hunter/Admin 加上全網 (去重)
+  const ghostPosts = useMemo(() => {
+    if (!hunterEnabled) return myGhosts;
+    const idSet = new Set(myGhosts.map(g => g.id));
+    const extra = allGhosts.filter(g => !idSet.has(g.id));
+    return [...myGhosts, ...extra];
+  }, [myGhosts, allGhosts, hunterEnabled]);
 
   // 預設 profile，避免 null 時整棵 component tree 被銷毀
   const safeProfile = profile ?? {
@@ -228,6 +240,10 @@ function TimeMachineApp() {
           <HistoryView setActiveTab={setActiveTab} posts={posts} />
         )}
 
+        {activeTab === 'admin' && safeProfile.isAdmin && (
+          <AdminDashboardView setActiveTab={setActiveTab} />
+        )}
+
         {/* 確保這裡有傳入 onShare */}
         <PostDetailModal
           selectedPost={selectedPost} setSelectedPost={setSelectedPost}
@@ -237,6 +253,7 @@ function TimeMachineApp() {
           tokens={tokens} stakedPostIds={stakedPostIds} revealedCoords={revealedCoords}
           heatmapCounts={heatmapCounts} isStaking={isStaking} onStake={stakeToken}
           ghostPosts={ghostPosts}
+          isAdmin={safeProfile.isAdmin === true}
         />
 
         <FilterModal 
