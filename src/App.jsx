@@ -111,10 +111,9 @@ function TimeMachineApp() {
     null;
   // Phase 3: ghost states — 我 stake 過、被別人領走 pending 中的 post
   const myGhosts = useGhostStates();
-  // Phase 6: 獵手 / Admin 看全網 ghosts
-  const hunterEnabled = (safeProfile.isGhostHunter === true) || (safeProfile.isAdmin === true);
+  // Phase 6: 獵手 / Admin 看全網 ghosts (用 profile?. 避免 TDZ)
+  const hunterEnabled = (profile?.isGhostHunter === true) || (profile?.isAdmin === true);
   const allGhosts = useAllGhostStates(hunterEnabled);
-  // 合併：個人 ghosts 永遠在 + Hunter/Admin 加上全網 (去重)
   const ghostPosts = useMemo(() => {
     if (!hunterEnabled) return myGhosts;
     const idSet = new Set(myGhosts.map(g => g.id));
