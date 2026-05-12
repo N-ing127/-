@@ -11,6 +11,7 @@ import { useHeatmap } from './hooks/useHeatmap';
 import { useSettlements } from './hooks/useSettlements';
 import { useGhostStates } from './hooks/useGhostStates';
 import { useAllGhostStates } from './hooks/useAllGhostStates';
+import { supabase } from './lib/supabase';
 
 // Views
 import HomeView from './views/HomeView';
@@ -109,6 +110,16 @@ function TimeMachineApp() {
     settlements.find(s => s.status === 'voided') ||
     settlements.find(s => s.isInWindow) ||
     null;
+
+  // Phase 6: 每次 settlement 變化 (有新 settled) 嘗試授予 hunter (RPC 內有條件檢查)
+  const settledCount = settlements.filter(s => s.isSettled).length;
+  useEffect(() => {
+    if (settledCount >= 20 && !profile?.isGhostHunter && supabase) {
+      supabase.rpc('try_grant_hunter').then(({ data }) => {
+        if (data?.success) triggerToast?.('🎉 解鎖「幽靈獵手」執照！', 'success');
+      }).catch(() => {});
+    }
+  }, [settledCount, profile?.isGhostHunter, triggerToast]);
   // Phase 3: ghost states — 我 stake 過、被別人領走 pending 中的 post
   const myGhosts = useGhostStates();
   // Phase 6: 獵手 / Admin 看全網 ghosts (用 profile?. 避免 TDZ)
@@ -240,7 +251,7 @@ function TimeMachineApp() {
         )}
 
         {activeTab === 'admin' && safeProfile.isAdmin && (
-          <AdminDashboardView setActiveTab={setActiveTab} />
+          <AdminDashboardView setActiveTab={setActiveTab} triggerToast={triggerToast} />
         )}
 
         {/* 確保這裡有傳入 onShare */}

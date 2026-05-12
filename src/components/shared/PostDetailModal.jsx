@@ -103,7 +103,17 @@ const PostDetailModal = ({
   };
 
   const handleProofConfirm = async (proofFile) => {
-    if (!user || !currentCoords) {
+    if (!user) {
+      triggerToast?.('請先登入', 'error');
+      return;
+    }
+    // Admin: 用 post 座標兜底 (反正後端 bypass distance check)
+    // 一般用戶: 必須有 currentCoords (前端已守門到此)
+    const coords = currentCoords
+      ?? (isAdmin && livePost.lat && livePost.lng
+            ? { lat: livePost.lat, lng: livePost.lng }
+            : null);
+    if (!coords) {
       triggerToast?.('定位異常，請重試', 'error');
       return;
     }
@@ -116,8 +126,8 @@ const PostDetailModal = ({
       }
       const ok = await onClaim(livePost, safeClaimQty, {
         url: path,
-        lat: currentCoords.lat,
-        lng: currentCoords.lng,
+        lat: coords.lat,
+        lng: coords.lng,
       });
       if (ok) setShowCamera(false);
     } catch (err) {
